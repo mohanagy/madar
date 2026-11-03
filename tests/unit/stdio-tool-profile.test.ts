@@ -13,6 +13,7 @@ import {
 } from '../../src/runtime/stdio/definitions.js'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
 import { constrainStrictContextPackPayload } from '../../src/runtime/stdio/tools.js'
+import { buildMadarResponseEvidenceWithPlanning } from '../../src/runtime/mcp-response-evidence.js'
 
 function createMinimalGraphRoot(): string {
   const parentDir = resolve('out', 'test-runtime')
@@ -575,6 +576,56 @@ describe('MCP tool profile', () => {
       } finally {
         rmSync(root, { recursive: true, force: true })
       }
+    })
+
+    it('keeps private navigation independent of public answerability and withheld targets', () => {
+      const { evidence, navigation } = buildMadarResponseEvidenceWithPlanning({
+        coverage: {
+          required_evidence: ['primary', 'supporting'], semantic_required: [], semantic_optional: [],
+          entries: [
+            { evidence_class: 'primary', required: true, available_nodes: 1, selected_nodes: 1, status: 'covered' },
+            { evidence_class: 'supporting', required: true, available_nodes: 1, selected_nodes: 0, status: 'available' },
+          ],
+          semantic_entries: [], missing_required: ['supporting'], missing_semantic: [],
+          available_relationships: 1, selected_relationships: 0,
+        },
+        coveredWorkflowOwners: ['a.ts'],
+      })
+      expect(navigation).toMatchObject({ state: 'verify_targets', candidate: { focus_files: ['a.ts'] } })
+      const originalPlan = structuredClone(navigation)
+      const payload = () => ({
+        prompt: 'Explain A', task: 'explain', pack: { expandable: [] }, expandable: [],
+        evidence: structuredClone(evidence),
+      })
+      const baseline = constrainStrictContextPackPayload(payload(), { strictContextPackMode: true }, navigation)
+      expect(baseline.expandable).toEqual([expect.objectContaining({
+        handle_id: expect.stringMatching(/^verify-/),
+        follow_up: expect.objectContaining({ focus_files: ['a.ts'] }),
+      })])
+      for (const state of ['ready', 'insufficient', 'verify_targets'] as const) {
+        const changed = payload()
+        changed.evidence.answerability.state = state
+        changed.evidence.answerability.verification_targets = []
+        const result = constrainStrictContextPackPayload(changed, { strictContextPackMode: true }, navigation)
+        expect(result.expandable).toEqual(baseline.expandable)
+        expect(result.evidence.answerability.state).toBe(state)
+        expect(result.evidence.answerability.verification_targets).toEqual([])
+      }
+      const redirected = payload()
+      redirected.evidence.answerability.verification_targets = [{
+        focus_files: ['unrelated.ts'], focus_ranges: [], reason: 'public suggestion only',
+      }]
+      expect(constrainStrictContextPackPayload(redirected, { strictContextPackMode: true }, navigation).expandable)
+        .toEqual(baseline.expandable)
+      const noAnswerability = constrainStrictContextPackPayload({ ...payload(), evidence: {} },
+        { strictContextPackMode: true }, navigation)
+      expect(noAnswerability.expandable).toEqual(baseline.expandable)
+      expect(noAnswerability.evidence).not.toHaveProperty('answerability')
+      const suppressed = constrainStrictContextPackPayload(payload(), { strictContextPackMode: true }, null)
+      expect(suppressed.expandable).toEqual([])
+      expect(constrainStrictContextPackPayload(payload(), { strictContextPackMode: true }).expandable)
+        .toEqual(baseline.expandable)
+      expect(navigation).toEqual(originalPlan)
     })
 
     it('turns a strict file-only verification target into one authorized expansion', async () => {

@@ -437,6 +437,8 @@ export interface ActiveMcpToolsOptions {
   /** When false, semantic/rerank fields are stripped from the retrieve
    *  schema so agents never request a capability this machine lacks. */
   semanticAvailable?: boolean
+  /** Experimental admission; defaults and installed profiles remain unchanged. */
+  exactSourceOnly?: boolean
 }
 
 function withoutSemanticFields(tool: McpToolDefinition): McpToolDefinition {
@@ -490,10 +492,26 @@ function strictToolSchema(tool: McpToolDefinition): McpToolDefinition {
 }
 
 export function activeMcpTools(profile: McpToolProfile = 'core', options: ActiveMcpToolsOptions = {}): McpToolDefinition[] {
+  if (options.exactSourceOnly) profile = 'strict'
   const enabledNames = new Set<string>(profile === 'strict' ? STRICT_TOOL_NAMES : CORE_TOOL_NAMES)
   let tools = profile === 'full' ? MCP_TOOLS : MCP_TOOLS.filter((tool) => enabledNames.has(tool.name))
   if (profile === 'strict') {
     tools = tools.map((tool) => strictToolSchema(tool))
+  }
+  if (options.exactSourceOnly) {
+    tools = tools.map(tool => ({
+      ...tool,
+      description: tool.name === 'context_pack'
+        ? 'Read verified exact JS/TS functions using required targets [{file, symbol}]. Discover real names with scoped native search first; do not guess symbols. Broad discovery is disabled. Completeness remains advisory.'
+        : 'Continue source from a successful exact-target request in this session. Use its returned handle_id; generic discovery and symbol overrides are disabled.',
+      inputSchema: {
+        ...tool.inputSchema,
+        required: tool.name === 'context_pack' ? ['prompt', 'targets'] : ['handle_id'],
+        properties: tool.name === 'context_pack'
+          ? { ...tool.inputSchema.properties, task: { type: 'string', enum: ['explain'] } }
+          : Object.fromEntries(Object.entries(tool.inputSchema.properties).filter(([key]) => key !== 'symbol')),
+      },
+    }))
   }
   if (options.semanticAvailable === false) {
     return tools.map((tool) => withoutSemanticFields(tool))
@@ -502,8 +520,13 @@ export function activeMcpTools(profile: McpToolProfile = 'core', options: Active
 }
 
 export function resolveToolProfileFromEnv(env: NodeJS.ProcessEnv = process.env): McpToolProfile {
+  if (experimentalExactSourceOnly(env)) return 'strict'
   const raw = (env.MADAR_TOOL_PROFILE ?? '').trim().toLowerCase()
   return raw === 'full' || raw === 'strict' ? raw : 'core'
+}
+
+export function experimentalExactSourceOnly(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.MADAR_EXPERIMENTAL_EXACT_SOURCE_ONLY === '1'
 }
 
 export function isToolEnabledInProfile(name: string, profile: McpToolProfile = 'core'): boolean {

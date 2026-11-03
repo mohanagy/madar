@@ -78,6 +78,7 @@ import {
   underScopedDivergenceNodeIds,
 } from './retrieve/conceptual-fallback.js'
 import { recoverContextPackResult } from './context-pack-recovery.js'
+import { prepareRepositoryQuery, repositoryQueryKey, type RepositoryQueryBinding } from './retrieve/repository-query.js'
 import {
   interpretRetrievalQuery,
   runRetrievalCandidateStage,
@@ -92,14 +93,18 @@ import {
   type RetrievalStageObserver,
 } from './retrieve/pipeline.js'
 import { communitiesFromGraph, estimateQueryTokens } from './serve.js'
-import { coherentSourceSnippet, readEvidenceLines, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
-import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
+import { coherentSourceSnippet, readEvidenceLines, sourcePathForEvidence, sourceDiagnosticAdmissionsKey, sourceDiagnosticAlternativesKey, searchSourceBodies, searchSourceBodyQuestions, sourceQueryLiterals, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceSyntaxTree, type EvidenceLineRange } from './retrieve/source-evidence.js'
+import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey, type SourceSelectionProvenance, sourceCallsiteBundlesKey, sourceFunctionValueReferencesKey, sourceFlowCatalogKey, sourceLocalPriorityKey, sourceClientPriorityKey, sourceSubjectPriorityKey, type SourceFlowCatalog, type SourceDependencySelection, type SourceCallsiteBundle, type SourceFunctionValueReference } from './retrieve/source-dependencies.js'
 import { recoverySourceGuard } from './retrieve/recovery-source-preservation.js'
 import { sourceQuerySymbols, type SourceSymbolOccurrence } from './retrieve/source-query-symbols.js'
 import { sourceQualifiedBindingScope } from './retrieve/source-qualified-bindings.js'
 import { sourceVisibleWarnings } from './retrieve/source-visible-warnings.js'
 import { prioritizeNextRouteReferences } from './retrieve/source-route-references.js'
-import { sourceCoherenceGroup } from './retrieve/source-coherence.js'
+import { sourceCoherenceGroup, sourceCompositionPriority } from './retrieve/source-coherence.js'
+import { sourceDiagnosticLexicalCompanions } from './retrieve/source-lexical-companions.js'
+import { sourceDiagnosticQueries, sourceDiagnosticSeeds, sourceDiagnosticCandidatePool, sourceDiagnosticContextsKey, sourceDiagnosticDecisionsKey, sourceDiagnosticFragmentsKey, type SourceDiagnosticClauseMatches } from './retrieve/source-diagnostic-priority.js'
+import { sourceClientContextRequest } from './retrieve/source-client-context.js'
+import { sourceIncomingDecisionFragment } from './retrieve/source-decision-fragments.js'
 import { buildSourceCoherentContinuationCatalog, sourceCoherentContinuationCatalogKey, type SourceCoherentContinuationCatalog } from './retrieve/source-coherent-continuation.js'
 import { selectRequestedHelperOwners } from './retrieve/source-requested-helpers.js'
 import { sourceRequestedOperations, sourceSimplePrototypeRequests, selectRequestedPrototypeOwners, selectVerifiedExplicitPrototypeOwners } from './retrieve/source-requested-operations.js'
@@ -264,6 +269,7 @@ export interface RetrieveResult {
   [sourceFlowCatalogKey]?: SourceFlowCatalog
   [sourceCoherentContinuationCatalogKey]?: SourceCoherentContinuationCatalog
   [sourceDiscoveryCoreKey]?: { question: string; node_ids: string[]; selected_node_ids: string[] }
+  [repositoryQueryKey]?: RepositoryQueryBinding
 }
 
 /** Request-local source provenance; never serialized as a retrieval claim. */
@@ -744,7 +750,7 @@ export function readQueryEvidenceSnippet(
   const sourceRange = options.fileNodeLike ? range : resolveSourceSymbolRange(lines, range, options.label, sourceFile)
   if (!sourceRange) return null
   const evidence = (options.fragment ? renderSourceFragment(lines, sourceRange, options.fragment, options.fileNodeLike ? 'source_file' : 'symbol') : undefined)
-    ?? coherentSourceSnippet(lines, sourceRange, options.question, options.fileNodeLike ? 'source_file' : 'symbol')
+    ?? coherentSourceSnippet(lines, sourceRange, options.question, options.fileNodeLike ? 'source_file' : 'symbol', sourceFile)
   return evidence ? {
     snippet: evidence.snippet, lineNumber: evidence.lineNumber, scope: evidence.scope,
     snippet_line_range: evidence.lineRange,
@@ -1464,7 +1470,8 @@ function sourceBehaviorLocation(graph: KnowledgeGraph, options: RetrieveOptions,
   if (options.retrievalStrategy === 'slice-v1' || classifyRetrieveTaskContract(options).task_kind !== 'explain'
     || sourceQueryIsLiteralLookup(options.question)) return undefined
   const positive = retrievalEvidencePrompt(options.question)
-  const clauseLocations = (!options.taskIntent || options.taskIntent === 'explain') && sourceQueryRequestsClauseLocations(positive)
+  const clauseLocations = (!options.taskIntent || options.taskIntent === 'explain' || options.taskIntent === 'debug-flow')
+    && sourceQueryRequestsClauseLocations(positive)
   const globs = clauseLocations ? sourceBehaviorGlobs(positive) : []
   if (!globs || (!files.length && !directories.length && !globs.length)) return undefined
   if (queryEvidenceObligations(positive).length < 2 && !/\b(?:how|when|why|whether)\b/i.test(positive)) return undefined
@@ -4560,7 +4567,7 @@ function independentSourceBodyCandidate(graph: KnowledgeGraph, node: ScoredNode,
 function allowsIndependentBodyDiscovery(options: RetrieveOptions, gate: RetrievalGateDecision, profile?: FrameworkQuestionProfile): boolean {
   return options.retrievalStrategy !== 'slice-v1'
     && (options.retrievalLevel === undefined || options.retrievalLevel <= 1)
-    && (!options.taskIntent || options.taskIntent === 'explain')
+    && (!options.taskIntent || options.taskIntent === 'explain' || options.taskIntent === 'debug-flow')
     && classifyRetrieveTaskContract(options).task_kind === 'explain'
     && !sourceQueryIsLiteralLookup(options.question)
     && queryEvidenceObligations(options.question).length >= 2
@@ -4576,6 +4583,7 @@ function sourceSelectionForTask(
   rootPath?: string,
   lookupCandidates: readonly ScoredNode[] = candidates,
   independentBodyPriority = false,
+  diagnosticClauseMatches: SourceDiagnosticClauseMatches = [],
 ): { candidates: readonly ScoredNode[]; scope: SourceSelectionScope; omitted?: number; dependencies?: SourceDependencySelection; provenance?: SourceSelectionProvenance; discoveryCore?: string[]; sourcePriority?: string[]; continuationCatalog?: SourceCoherentContinuationCatalog } {
   const question = options.question
   if (options.retrievalStrategy === 'slice-v1') return { candidates, scope: 'task_context' }
@@ -4800,9 +4808,28 @@ function sourceSelectionForTask(
     && sourceFileInBehaviorLocation(node.sourceFile, behaviorLocation, rootPath ?? inferredGraphRoot(graph))
     && currentDeclaration(node) === 'function') : []
   const operationAnchors = symbols.filter(node => operationIds.has(node.id))
+  const diagnosticRoot = rootPath ?? inferredGraphRoot(graph)
+  const diagnosticQuestion = retrievalEvidencePrompt(question)
+  const diagnosticExclusions = compileSourceExclusions(retrievalGate.signals.excluded_terms ?? [],
+    retrievalGate.signals.excluded_path_hints ?? [], diagnosticRoot)
+  const diagnosticIds: ReturnType<typeof sourceDiagnosticSeeds> = options.taskIntent === 'debug-flow' && independentBodyPriority && !broadTask && !explicitLevel
+    && !behaviorLocation && !operationAnchors.length && firstPosition === undefined && !requested.length
+    && !retrievalGate.signals.mentioned_paths.length && !retrievalGate.signals.mentioned_directories?.length
+    && !sourceQueryLiterals(diagnosticQuestion).length
+    && !sourceQuerySymbols(diagnosticQuestion).some(occurrence => occurrence.explicit
+      && (/[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(diagnosticQuestion.slice(occurrence.end))))
+    && diagnosticExclusions.valid
+    ? sourceDiagnosticSeeds(sourceDiagnosticCandidatePool(candidates.filter(node => independentSourceBodyCandidate(graph, node, options, diagnosticRoot)), diagnosticClauseMatches[sourceDiagnosticAdmissionsKey], diagnosticClauseMatches[sourceDiagnosticAlternativesKey]), diagnosticClauseMatches,
+      (file, label, text) => !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(file, diagnosticRoot) as never)
+        && !diagnosticExclusions.matchesSource(file, label, diagnosticRoot) && !diagnosticExclusions.matchesText(text),
+      diagnosticRoot, requestSourceCache(options)) : []
+  const diagnosticOwners = diagnosticIds.flatMap(id => {
+    const node = candidates.find(candidate => candidate.id === id); return node ? [node] : []
+  })
   const contextAnchors = firstPosition === undefined
     ? behaviorLocation ? locationBodies.slice(0, 3)
-      : fileTargets.length ? fileTargets : (concreteFunctions.length ? concreteFunctions : symbols).filter(node => node.relevanceBand === 'direct').slice(0, 3)
+      : fileTargets.length ? fileTargets : [...new Map([...diagnosticOwners, ...(concreteFunctions.length ? concreteFunctions : symbols)
+        .filter(node => node.relevanceBand === 'direct')].map(node => [node.id, node])).values()].slice(0, 3)
     : explicitNames.filter(entry => entry.position === firstPosition && unambiguousIds.has(entry.node.id)).map(entry => entry.node)
   const anchors = [...operationAnchors, ...contextAnchors.filter(node => !operationIds.has(node.id))]
   const seeds = [...new Map([...anchors, ...requested].map(node => [node.id, node])).values()]
@@ -4874,7 +4901,36 @@ function sourceSelectionForTask(
       if (callers.length) scopedValueCallers = callers
     }
   }
-  const dependencies = selectSourceDependencies(graph, seeds.map(node => node.id), rootPath ?? inferredGraphRoot(graph), requestSourceCache(options), {
+  const independentBodyScope = independentBodyPriority && !operationAnchors.length && firstPosition === undefined && !requested.length
+    && !hasRequestedFiles && allowsIndependentBodyDiscovery(options, retrievalGate)
+  const independentIds = new Set(withRequested.map(node => node.id))
+  const independent = independentBodyScope ? lookupCandidates.filter(node => independentIds.has(node.id)
+    && independentSourceBodyCandidate(graph, node, options, rootPath)) : []
+  const localRoot = rootPath ?? inferredGraphRoot(graph)
+  const localExclusions = compileSourceExclusions(retrievalGate.signals.excluded_terms ?? [],
+    retrievalGate.signals.excluded_path_hints ?? [], localRoot)
+  const localLeader = !callerIntent && !broadTask && !explicitLevel ? independent[0] : undefined
+  const clientLeader = localLeader && localLeader.id === seeds[0]?.id && independentBodyScope
+    && classifyRetrieveTaskContract(options).task_intent === 'explain'
+    && !requested.length && firstPosition === undefined && !hasRequestedFiles && !operationAnchors.length
+    && !retrievalGate.signals.mentioned_paths.length && !retrievalGate.signals.mentioned_directories?.length
+    && !sourceQueryLiterals(positive).length && sourceClientContextRequest(question)
+    && !sourceQuerySymbols(positive).some(occurrence => occurrence.explicit
+      && (/[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(positive.slice(occurrence.end))))
+    ? localLeader : undefined
+  // Configuration freshness also checks missing policy/configuration paths.
+  // Their scope predicate must not require a readable source declaration.
+  const allowedLocalPath = (file: string, canonical?: string): boolean => localExclusions.valid
+    && [file, ...(canonical ? [canonical] : [])].every(path =>
+      !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, localRoot) as never)
+      && !localExclusions.matchesSource(path, path, localRoot))
+  const allowedLocalOwner = (file: string, label: string, text: string): boolean => {
+    const canonical = sourcePathForEvidence(file, localRoot)
+    return !!canonical && localExclusions.valid && !localExclusions.matchesText(text)
+      && [file, canonical].every(path => !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, localRoot) as never)
+        && !localExclusions.matchesSource(path, label, localRoot))
+  }
+  const dependencies = selectSourceDependencies(graph, seeds.map(node => node.id), localRoot, requestSourceCache(options), {
     // A question scoped to named files needs their implementations and local
     // dependencies. Reverse callers enter only when the request asks for them.
     includeCallers: (!hasRequestedFiles && !operationAnchors.length) || callerIntent,
@@ -4886,6 +4942,9 @@ function sourceSelectionForTask(
       anchor_ids: anchors.map(node => node.id), heuristic_anchor_ids: firstPosition === undefined && (behaviorLocation || !fileTargets.length) ? anchors.map(node => node.id) : [],
     },
     ...(discoveryCore || scopedValueCallers ? { functionValueCallerIds: discoveryCore ?? scopedValueCallers! } : {}),
+    ...(localLeader && localRoot ? { localPriority: { seedId: localLeader.id, allowedOwner: allowedLocalOwner } } : {}),
+    ...(clientLeader && localRoot ? { clientPriority: { seedId: clientLeader.id, question, allowedOwner: allowedLocalOwner } } : {}),
+    ...(localLeader && localRoot && independentBodyScope ? { subjectPriority: { seedId: localLeader.id, question, allowedPath: allowedLocalPath, allowedOwner: allowedLocalOwner } } : {}),
   })
   const qualifiedBindingScope = !exclusiveSymbolAnchor && !broadTask && !explicitLevel && !hasRequestedFiles
     && !callerIntent && options.taskIntent !== 'impact' && firstPosition !== undefined
@@ -4983,15 +5042,26 @@ function sourceSelectionForTask(
   const remainder = (sourceBoundSymbolAnchor || exclusiveRequestedFiles) && (dependencies.receipt.resolved_calls > 0 || dependencies.receipt.unresolved_calls > 0 || (dependencies.receipt.resolved_references ?? 0) > 0)
     ? multipartBody.filter(node => !selected.has(node.id)) : withRequested.filter(node => !selected.has(node.id))
   let ordered = [...seeds, ...resolved, ...remainder]
+  const lexicalCompanions = diagnosticIds.length && independentBodyScope && localExclusions.valid
+    ? sourceDiagnosticLexicalCompanions(diagnosticIds, lookupCandidates, dependencies[sourceSelectionProvenanceKey],
+      dependencies.source_call_authority_owner_ids ?? [], (file, label, text) =>
+        !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(file, localRoot) as never)
+        && !localExclusions.matchesSource(file, label, localRoot) && !localExclusions.matchesText(text), localRoot) : []
+  if (lexicalCompanions.length) {
+    const byId = new Map(lexicalCompanions.map(value => [value.candidate.id, value]))
+    ordered = ordered.map(node => byId.has(node.id) ? { ...node, sourceFragment: byId.get(node.id)!.fragment } : node)
+    const existing = new Set(ordered.map(node => node.id))
+    ordered.push(...lexicalCompanions.filter(value => !existing.has(value.candidate.id))
+      .map(({ candidate, fragment }) => ({ ...candidate, sourceFragment: fragment })))
+    dependencies.receipt.lexical_definition_context = { admitted_node_ids: lexicalCompanions.map(value => value.candidate.id), runtime_dispatch: 'unresolved' }
+  }
   let sourcePriority: string[] | undefined
   let continuationCatalog: SourceCoherentContinuationCatalog | undefined
-  if (independentBodyPriority && !discoveryCore && !operationAnchors.length && firstPosition === undefined && !requested.length
-    && !hasRequestedFiles && allowsIndependentBodyDiscovery(options, retrievalGate)) {
+  // Literal discovery records recoverable owners, not an explicit callable
+  // scope. It must not let a heuristic closure displace independent body matches.
+  if (independentBodyScope) {
     // Source matches retain their query rank and original evidence class,
     // even when the same owner also appears in a heuristic call closure.
-    const eligibleIds = new Set(withRequested.map(node => node.id))
-    const independent = lookupCandidates.filter(node => eligibleIds.has(node.id)
-      && independentSourceBodyCandidate(graph, node, options, rootPath))
     const independentIds = new Set(independent.map(node => node.id))
     const routeRoot = rootPath ?? inferredGraphRoot(graph)
     const exclusions = compileSourceExclusions(retrievalGate.signals.excluded_terms ?? [],
@@ -5005,18 +5075,73 @@ function sourceSelectionForTask(
     ordered = [...referenced, ...ordered.filter(node => !independentIds.has(node.id))]
     const coherence = sourceCoherenceGroup(independent, ordered, dependencies[sourceSelectionProvenanceKey],
       routeRoot, requestSourceCache(options))
-    sourcePriority = coherence?.priority
+    const allowedPath = (file: string, canonical?: string): boolean => exclusions.valid
+      && [file, ...(canonical ? [canonical] : [])].every(path =>
+        !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, routeRoot) as never)
+        && !exclusions.matchesSource(path, path, routeRoot))
+    const allowedOwner = (file: string, label: string, text: string): boolean => !exclusions.matchesSource(file, label, routeRoot)
+      && !exclusions.matchesText(text)
+    sourcePriority = coherence?.priority ?? sourceCompositionPriority(independent, ordered, dependencies[sourceSelectionProvenanceKey],
+      allowedPath, allowedOwner, routeRoot)
+    if (!sourcePriority.length) sourcePriority = dependencies[sourceLocalPriorityKey]
+    if (dependencies[sourceClientPriorityKey]?.length) {
+      sourcePriority = [...new Set([...dependencies[sourceClientPriorityKey]!, ...(sourcePriority ?? [])])]
+    }
+    if (diagnosticIds.length) {
+      // Authored decisions precede discovery roots and optional context. The
+      // root limit controls dependency discovery, not presentation authority.
+      const provenance = dependencies[sourceSelectionProvenanceKey]
+      const admitted = new Set(ordered.map(node => node.id))
+      const unique = new Set(provenance?.owners.filter(owner => owner.status === 'unique').map(owner => owner.node_id))
+      const preferred = new Set((diagnosticIds[sourceDiagnosticDecisionsKey] ?? diagnosticIds).filter(id => admitted.has(id)).slice(0, 8))
+      for (const id of diagnosticIds) if (admitted.has(id) && preferred.size < 12) preferred.add(id)
+      for (const { candidate } of lexicalCompanions) if (preferred.size < 12) preferred.add(candidate.id)
+      const queue = diagnosticIds.filter(id => admitted.has(id))
+      for (let index = 0; index < queue.length && preferred.size < 12; index++) {
+        for (const pair of provenance?.resolved_pairs ?? []) {
+          if (preferred.size >= 12) break
+          if (pair.from_id === queue[index] && pair.relation === 'calls' && admitted.has(pair.to_id)
+            && unique.has(pair.to_id) && !preferred.has(pair.to_id)) {
+            preferred.add(pair.to_id); queue.push(pair.to_id)
+          }
+        }
+      }
+      sourcePriority = [...new Set([...preferred, ...(sourcePriority ?? [])])]
+    }
+    const decision = sourceIncomingDecisionFragment(independent, ordered, question, dependencies, allowedPath, allowedOwner, routeRoot)
+    if (decision) {
+      const connector = independent[1]?.id === decision.calleeId && independent[0]
+        ? sourceCompositionPriority(independent, ordered, dependencies[sourceSelectionProvenanceKey],
+          allowedPath, allowedOwner, routeRoot, { fromId: decision.calleeId, toId: independent[0].id }) : []
+      // Protect verified forward context before optional incoming source. Without
+      // a current connector, retain ordinary selection rather than crowding it out.
+      const prefix = sourcePriority?.length ? [...sourcePriority]
+        : independent.slice(0, independent.findIndex(node => node.id === decision.calleeId) + 1).map(node => node.id)
+      if (connector.length && !prefix.includes(decision.callerId)) {
+        ordered = ordered.map(node => node.id === decision.callerId ? { ...node, sourceFragment: decision.fragment } : node)
+        sourcePriority = [...new Set([...prefix, ...connector, decision.callerId])]
+      }
+    }
     if (coherence) {
-      const allowedPath = (file: string, canonical?: string): boolean => exclusions.valid
-        && [file, ...(canonical ? [canonical] : [])].every(path =>
-          !(retrievalGate.signals.excluded_domains ?? []).includes(classifySourceDomain(path, routeRoot) as never)
-          && !exclusions.matchesSource(path, path, routeRoot))
       continuationCatalog = buildSourceCoherentContinuationCatalog(coherence.methods, ordered, question,
         dependencies[sourceSelectionProvenanceKey], id => byId.get(id)
           ?? (graph.hasNode(id) ? scoredNodeFromGraph(graph, id, 1, routeRoot) : undefined),
-        allowedPath, (file, label, text) => !exclusions.matchesSource(file, label, routeRoot)
-          && !exclusions.matchesText(text), routeRoot)
+        allowedPath, allowedOwner, routeRoot)
     }
+    if (dependencies[sourceSubjectPriorityKey]?.length) {
+      sourcePriority = [...new Set([...(sourcePriority ?? []), ...dependencies[sourceSubjectPriorityKey]!])]
+    }
+  }
+  if (lexicalCompanions.length) {
+    const fragments = new Map(lexicalCompanions.map(value => [value.candidate.id, value.fragment]))
+    ordered = ordered.map(node => fragments.has(node.id) ? { ...node, sourceFragment: fragments.get(node.id)! } : node)
+  }
+  const diagnosticFragments = diagnosticIds[sourceDiagnosticFragmentsKey]
+  if (diagnosticFragments?.size) {
+    // Keep existing explicit/coherent fragments and the original factory owner.
+    // Continuation preparation verifies the full owner range and every gap.
+    ordered = ordered.map(node => !node.sourceFragment && diagnosticFragments.has(node.id)
+      ? { ...node, sourceFragment: diagnosticFragments.get(node.id)! } : node)
   }
   return { candidates: ordered, scope: 'task_context', dependencies, ...(discoveryCore ? { discoveryCore } : {}),
     ...(sourcePriority?.length ? { sourcePriority } : {}), ...(continuationCatalog ? { continuationCatalog } : {}) }
@@ -5034,9 +5159,10 @@ function buildRetrieveResultFromOrderedCandidates(
   sliceMetadata?: ContextPackSliceMetadata,
   lookupCandidates?: readonly ScoredNode[],
   independentBodyPriority = false,
+  diagnosticClauseMatches: SourceDiagnosticClauseMatches = [],
 ): RetrieveResult {
   const snippetFileCache = requestSourceCache(options)
-  const selection = sourceSelectionForTask(graph, options, inputCandidates, retrievalGate, rootPath, lookupCandidates, independentBodyPriority)
+  const selection = sourceSelectionForTask(graph, options, inputCandidates, retrievalGate, rootPath, lookupCandidates, independentBodyPriority, diagnosticClauseMatches)
   const baseTaskContract = classifyRetrieveTaskContract(options)
   const taskContract: ContextPackTaskContract = selection.scope === 'task_context' ? baseTaskContract : {
     ...baseTaskContract,
@@ -5456,7 +5582,24 @@ function retrieveContextPass(
   // Step 1+2: Score all nodes with explicit seed evidence weights.
   const tokenWeights = tokenWeightsForQuestion(graph, questionTokens)
   const averageLabelLength = averageLabelLengthForGraph(graph)
-  const bodySearch = searchSourceBodies(graph, behaviorLocation?.question ?? question, classificationRootPath, requestSourceCache(options))
+  const diagnosticQueries: ReturnType<typeof sourceDiagnosticQueries> = options.taskIntent === 'debug-flow' && !options.semantic && !options.rerank
+    && conceptualNodeBoosts.size === 0 && !behaviorLocation
+    && allowsIndependentBodyDiscovery(options, retrievalGate, frameworkProfile)
+    ? sourceDiagnosticQueries(question) : []
+  // Full-query admission and clause ranking share one bounded file/owner scan.
+  // Optional clause queries cannot introduce literal scan-order hints.
+  const bodySearches = searchSourceBodyQuestions(graph, [behaviorLocation?.question ?? question, ...diagnosticQueries],
+    classificationRootPath, requestSourceCache(options), diagnosticQueries.length >= 2 && sourceExclusions.valid ? {
+      ...(diagnosticQueries[sourceDiagnosticContextsKey] ? { contexts: diagnosticQueries[sourceDiagnosticContextsKey] } : {}),
+      allowedOwner: (file, canonical, label, text) => [file, canonical].every(path =>
+        !excludedDomains.includes(classifySourceDomain(path, classificationRootPath) as never)
+        && !sourceExclusions.matchesSource(path, label, classificationRootPath)) && !sourceExclusions.matchesText(text),
+    } : undefined)
+  const bodySearch = bodySearches[0]!
+  const diagnosticClauseMatches: SourceDiagnosticClauseMatches = Object.assign(bodySearches.slice(1).map(search => search.matches), {
+    [sourceDiagnosticAdmissionsKey]: bodySearch[sourceDiagnosticAdmissionsKey] ?? [],
+    ...(bodySearch[sourceDiagnosticAlternativesKey] ? { [sourceDiagnosticAlternativesKey]: bodySearch[sourceDiagnosticAlternativesKey] } : {}),
+  })
   const prioritizeBodyCoverage = queryEvidenceObligations(question).length > 1 && !sourceQueryIsLiteralLookup(question)
   const seedCandidates: SeedCandidate[] = []
   for (const [id, attributes] of graph.nodeEntries()) {
@@ -5697,6 +5840,7 @@ function retrieveContextPass(
       return {
         candidate_count: seedPool.length,
         sourceSearch: { scanned_files: bodySearch.scanned_files, scanned_bytes: bodySearch.scanned_bytes, bounded: bodySearch.bounded },
+        diagnosticClauseMatches,
         sourceBodyCandidateIds: !sourceQueryIsLiteralLookup(question)
           ? scored.filter((node) => (node.sourceBodyScore ?? 0) > 0 && !node.fileNodeLike).slice(0, 4).map((node) => node.id)
           : [],
@@ -5724,6 +5868,7 @@ function retrieveContextPass(
   )
   const {
     sourceSearch,
+    diagnosticClauseMatches,
     sourceBodyCandidateIds,
     independentlyAdmittedBodyIds,
     sourceNavigationCandidateIds,
@@ -6161,6 +6306,7 @@ function retrieveContextPass(
     sliceMetadata,
     lookupCandidates,
     independentlyAdmittedBodyIds.size > 0,
+    diagnosticClauseMatches,
   )
   return { ...result, source_search: sourceSearch,
     ...(independentlyAdmittedBodyIds.size ? { [independentSourceBodiesKey]: true as const } : {}) }
@@ -6349,7 +6495,8 @@ const recoverContextPackWithStage = (
 
 export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions): RetrieveResult {
   const originalQuestion = options.question
-  options = { ...options, question: retrievalSubjectPrompt(originalQuestion) }
+  const repositoryQuery = prepareRepositoryQuery(graph, originalQuestion, classifyRetrieveTaskContract(options).task_kind)
+  options = { ...options, question: repositoryQuery?.effectiveQuestion ?? retrievalSubjectPrompt(originalQuestion) }
   const initial = retrieveContextWithConceptualFallback(graph, options)
   const result = recoverContextPackWithStage(
     graph,
@@ -6357,13 +6504,14 @@ export function retrieveContext(graph: KnowledgeGraph, options: RetrieveOptions)
     options,
     (nodeBoosts) => retrieveContextPass(graph, options, nodeBoosts),
   )
-  return { ...result, question: originalQuestion }
+  return { ...result, question: originalQuestion, ...(repositoryQuery ? { [repositoryQueryKey]: repositoryQuery } : {}) }
 }
 
 export async function retrieveContextAsync(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {
   const originalQuestion = options.question
-  const result = await retrieveContextAsyncForSubject(graph, { ...options, question: retrievalSubjectPrompt(originalQuestion) })
-  return { ...result, question: originalQuestion }
+  const repositoryQuery = prepareRepositoryQuery(graph, originalQuestion, classifyRetrieveTaskContract(options).task_kind)
+  const result = await retrieveContextAsyncForSubject(graph, { ...options, question: repositoryQuery?.effectiveQuestion ?? retrievalSubjectPrompt(originalQuestion) })
+  return { ...result, question: originalQuestion, ...(repositoryQuery ? { [repositoryQueryKey]: repositoryQuery } : {}) }
 }
 
 async function retrieveContextAsyncForSubject(graph: KnowledgeGraph, options: RetrieveOptions): Promise<RetrieveResult> {

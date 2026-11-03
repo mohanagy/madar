@@ -1,10 +1,151 @@
+import { createHash } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 import ts from 'typescript'
 import { lineRangeFromSourceLocation } from '../../shared/source-location.js'
-import { readEvidenceLines, resolveSourceSymbolRange, sourceDeclarationQualifiedName, sourcePathForEvidence, sourceSyntaxTree } from './source-evidence.js'
+import { coherentSourceSnippet, readEvidenceLines, resolveSourceSymbolRange, sourceDeclarationKind, sourceDeclarationQualifiedName, sourcePathForEvidence, sourceSyntaxTree } from './source-evidence.js'
+import { sourceModuleConfigurationSnapshotIsFresh } from './source-modules.js'
 import type { SourceSelectionProvenance } from './source-selection-provenance.js'
 
-interface SourceCandidate { id: string; label: string; sourceFile: string; sourceLocation: string | null }
+interface SourceCandidate { id: string; label: string; sourceFile: string; sourceLocation: string | null; sourceFragment?: unknown }
 type MethodOwner = { candidate: SourceCandidate; method: ts.MethodDeclaration; file: string }
+
+/** Retain an admitted composition caller beside the two classes it connects.
+ * The optional decision mode protects a forward function connector first.
+ * Positive current sites guide presentation only, never new call authority. */
+export function sourceCompositionPriority(
+  independent: readonly SourceCandidate[], candidates: readonly SourceCandidate[],
+  provenance: SourceSelectionProvenance | undefined,
+  allowedPath: (file: string, canonical?: string) => boolean,
+  allowedOwner: (file: string, label: string, text: string) => boolean, rootPath?: string,
+  connector?: { fromId: string; toId: string },
+): string[] {
+  if (!rootPath || !provenance?.configuration || provenance.root_path !== resolve(rootPath)
+    || independent.length < 2 || candidates.length > 256 || provenance.owners.length > 100_000
+    || !provenance.observed_sites?.length || provenance.observed_sites.length > 4096
+    || provenance.resolved_pairs.length > 8192
+    || !(['identity', 'mutation', 'write_origins'] as const).every(scan => provenance.scans[scan] === 'complete')) return []
+  const leading = independent.slice(0, 2)
+  if (connector && (leading.length !== 2 || leading[0]!.id !== connector.toId || leading[1]!.id !== connector.fromId
+    || !leading.every(candidate => provenance.seed_ids.includes(candidate.id)) || provenance.scans.calls !== 'complete')) return []
+  // Ordinary method coherence and function questions keep their existing path.
+  if (!leading.every(candidate => {
+    if (!allowedPath(candidate.sourceFile)) return false
+    const canonical = sourcePathForEvidence(candidate.sourceFile, rootPath)
+    if (!canonical || !allowedPath(candidate.sourceFile, canonical)) return false
+    const range = lineRangeFromSourceLocation(candidate.sourceLocation)
+    const lines = range && readEvidenceLines(candidate.sourceFile, rootPath)
+    return range && lines && sourceDeclarationKind(lines, range, candidate.label, candidate.sourceFile) === (connector ? 'function' : 'class')
+  })) return []
+  try { if (realpathSync(rootPath) !== provenance.configuration.real_root) return [] } catch { return [] }
+  if (!sourceModuleConfigurationSnapshotIsFresh(provenance.configuration, rootPath, allowedPath)) return []
+  const inputs = provenance.sources.filter(source => source.in_program)
+  if (!inputs.length || inputs.length > 32) return []
+  const files = new Map<string, { lines: string[]; hash: string; source: ts.SourceFile }>()
+  let bytes = 0, visited = 0
+  for (const input of inputs) {
+    if (!allowedPath(input.source_file)) return []
+    const canonical = sourcePathForEvidence(input.source_file, rootPath)
+    if (!canonical || canonical !== input.canonical_file || !allowedPath(input.source_file, canonical)) return []
+    const lines = readEvidenceLines(input.source_file, rootPath)
+    if (!lines) return []
+    const text = lines.join('\n'), hash = createHash('sha256').update(text).digest('hex')
+    if ((bytes += Buffer.byteLength(text)) > 1024 * 1024 || hash !== input.source_sha256) return []
+    const source = sourceSyntaxTree(lines, canonical)
+    if ((source as ts.SourceFile & { parseDiagnostics?: readonly ts.Diagnostic[] }).parseDiagnostics?.length) return []
+    files.set(canonical, { lines, hash, source })
+  }
+  const owners = new Map(provenance.owners.map(owner => [owner.node_id, owner]))
+  const ownerFor = (candidate: SourceCandidate) => {
+    if (!allowedPath(candidate.sourceFile)) return undefined
+    const proof = owners.get(candidate.id), indexed = lineRangeFromSourceLocation(candidate.sourceLocation)
+    const canonical = sourcePathForEvidence(candidate.sourceFile, rootPath), file = canonical && files.get(canonical)
+    if (!canonical || !allowedPath(candidate.sourceFile, canonical)
+      || !proof || proof.status !== 'unique' || !proof.declaration_offsets || !indexed || !file
+      || indexed.start !== proof.indexed_range.start || indexed.end !== proof.indexed_range.end
+      || resolve(rootPath, proof.source_file) !== resolve(rootPath, candidate.sourceFile)) return undefined
+    const range = resolveSourceSymbolRange(file.lines, indexed, candidate.label, canonical)
+    if (!range || !allowedOwner(candidate.sourceFile, candidate.label, file.lines.slice(range.start - 1, range.end).join('\n'))) return undefined
+    let declaration: ts.Node | undefined
+    const visit = (node: ts.Node): void => {
+      if (++visited > 100_000) return
+      if (node.getStart(file.source) === proof.declaration_offsets!.start && node.getEnd() === proof.declaration_offsets!.end) declaration = node
+      else if (!declaration) ts.forEachChild(node, visit)
+    }
+    visit(file.source)
+    return declaration && visited <= 100_000 ? { ...file, range, declaration, canonical } : undefined
+  }
+  const leaders = leading.map(ownerFor)
+  if (new Set(leading.map(candidate => candidate.id)).size !== 2
+    || !leaders.every(owner => owner && (connector
+      ? ts.isFunctionDeclaration(owner.declaration) && owner.declaration.parent === owner.source
+      : ts.isClassDeclaration(owner.declaration) || ts.isClassExpression(owner.declaration)))) return []
+  const leadingIds = new Set(leading.map(candidate => candidate.id))
+  const bridges: string[] = []
+  for (const candidate of candidates) {
+    const pairs = connector ? [{ from_id: connector.fromId, to_id: candidate.id }, { from_id: candidate.id, to_id: connector.toId }]
+      : leading.map(target => ({ from_id: candidate.id, to_id: target.id }))
+    if (leadingIds.has(candidate.id) || (connector && (!provenance.selected_ids.includes(candidate.id) || candidate.sourceFragment))
+      || !pairs.every(expected => provenance.resolved_pairs.some(pair => pair.from_id === expected.from_id
+        && pair.to_id === expected.to_id && pair.relation === 'calls' && pair.kind === 'call'))) continue
+    const owner = ownerFor(candidate)
+    if (!owner || sourceDeclarationKind(owner.lines, owner.range, candidate.label, candidate.sourceFile) !== 'function'
+      || (connector && (!ts.isFunctionDeclaration(owner.declaration) || owner.declaration.parent !== owner.source))
+      || coherentSourceSnippet(owner.lines, owner.range, '', 'symbol')?.omittedRanges.length !== 0) continue
+    if (connector) {
+      let witnessed = true
+      for (const pair of pairs) {
+        const from = pair.from_id === candidate.id ? owner : leaders[1]!
+        const fromCandidate = pair.from_id === candidate.id ? candidate : leading[1]!
+        const sites = provenance.observed_sites.filter(site => site.from_id === pair.from_id && site.to_id === pair.to_id && site.kind === 'call'
+          && site.source_sha256 === from.hash && resolve(rootPath, site.source_file) === resolve(rootPath, fromCandidate.sourceFile)
+          && site.start_offset >= from.declaration.getStart(from.source) && site.end_offset <= from.declaration.getEnd())
+        let visible = false
+        const visit = (node: ts.Node): void => {
+          if (++visited > 100_000) return
+          if (ts.isCallExpression(node) && sites.some(site => node.getStart(from.source) === site.start_offset
+            && node.getEnd() === site.end_offset)) visible = true
+          ts.forEachChild(node, visit)
+        }
+        visit(from.declaration)
+        if (visited > 100_000) return []
+        if (!visible) { witnessed = false; break }
+      }
+      if (witnessed) bridges.push(candidate.id)
+    } else {
+      const sites = provenance.observed_sites.filter(site => site.from_id === candidate.id && site.kind === 'call'
+        && leadingIds.has(site.to_id) && site.source_sha256 === owner.hash
+        && resolve(rootPath, site.source_file) === resolve(rootPath, candidate.sourceFile)
+        && site.start_offset >= owner.declaration.getStart(owner.source) && site.end_offset <= owner.declaration.getEnd())
+      const visibleTargets = new Set<string>()
+      const visit = (node: ts.Node): void => {
+        if (++visited > 100_000) return
+        if (ts.isCallExpression(node) || ts.isNewExpression(node)) for (const site of sites) {
+          if (node.getStart(owner.source) === site.start_offset && node.getEnd() === site.end_offset) visibleTargets.add(site.to_id)
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(owner.declaration)
+      if (visited > 100_000) return []
+      if (leading.every(target => visibleTargets.has(target.id))) bridges.push(candidate.id)
+    }
+    if (bridges.length >= (connector ? 1 : 10)) break
+  }
+  if (!bridges.length || !sourceModuleConfigurationSnapshotIsFresh(provenance.configuration, rootPath, allowedPath)) return []
+  // Cached request text is not a freshness certificate for positive bindings.
+  let currentBytes = 0
+  for (const input of inputs) {
+    if (!allowedPath(input.source_file)) return []
+    const canonical = sourcePathForEvidence(input.source_file, rootPath)
+    if (!canonical || canonical !== input.canonical_file || !allowedPath(input.source_file, canonical)) return []
+    const lines = readEvidenceLines(input.source_file, rootPath)
+    if (!lines) return []
+    const text = lines.join('\n')
+    if ((currentBytes += Buffer.byteLength(text)) > 1024 * 1024
+      || createHash('sha256').update(text).digest('hex') !== input.source_sha256) return []
+  }
+  return sourceModuleConfigurationSnapshotIsFresh(provenance.configuration, rootPath, allowedPath) ? [...leadingIds, ...bridges] : []
+}
 
 /** Presentation affinity only: this.member syntax does not prove runtime dispatch.
  * The result contains existing candidates; no call edge or coverage is created. */

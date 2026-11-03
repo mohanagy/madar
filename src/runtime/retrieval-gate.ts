@@ -571,10 +571,6 @@ function parsePromptExclusions(prompt: string, regions: readonly PromptRegion[])
       if (hint) {
         excludedPathHints.add(hint)
       }
-      const trailingWord = term.split(/\s+/).at(-1)
-      if (trailingWord && trailingWord !== term) {
-        excludedTerms.add(trailingWord)
-      }
       for (const mapping of EXCLUDED_DOMAIN_HINTS) {
         if (mapping.pattern.test(term)) {
           excludedDomains.add(mapping.domain)

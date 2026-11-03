@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { buildFromJson } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { withExtractionFileStemContext } from '../../src/pipeline/extract/core.js'
-import { retrieveContext, compactRetrieveResult } from '../../src/runtime/retrieve.js'
+import { retrieveContext, compactRetrieveResult, sourceDiscoveryCoreKey } from '../../src/runtime/retrieve.js'
 import { searchSourceBodies } from '../../src/runtime/retrieve/source-evidence.js'
 
 const roots: string[] = []
@@ -77,6 +77,7 @@ describe('behavior evidence selection', () => {
     const { graph } = fixture({ 'src/options.ts': `export interface Options { ${decisions.map(decision => `${decision}: string`).join('; ')} }`,
       ...Object.fromEntries(decisions.map((decision, index) => [
       `src/stage-${index}.ts`, `export function stage${index}() {
+ ${index === 0 ? 'const auditMode = true;' : ''}
  const invoice = "${decision}";
  return wrap(invoice);
 }
@@ -88,13 +89,18 @@ function wrap(value: string) { return value.trim(); }`,
         framework_role: 'express_handler',
       })
     }
-    const question = `Trace invoice ${decisions.join(', ')} through POST.`
-    const result = retrieveContext(graph, { question, taskKind: 'explain', budget: 3000 })
-    const requested = result.matched_nodes.filter(node => /^stage\d\(\)$/.test(node.label))
-    expect(requested).toHaveLength(decisions.length)
-    expect(result.matched_nodes.slice(0, decisions.length).every(node => /^stage\d\(\)$/.test(node.label))).toBe(true)
-    expect(compactRetrieveResult(result).matched_nodes.filter(node => /^stage\d\(\)$/.test(node.label))).toHaveLength(decisions.length)
-    expect(result.token_count).toBeLessThanOrEqual(3000)
+    for (const prefix of ['', 'With auditMode enabled, ']) {
+      const question = `${prefix}Trace invoice ${decisions.join(', ')} through POST.`
+      const result = retrieveContext(graph, { question, taskKind: 'explain', budget: 3000 })
+      const requested = result.matched_nodes.filter(node => /^stage\d\(\)$/.test(node.label))
+      expect(requested).toHaveLength(decisions.length)
+      expect(result.matched_nodes.slice(0, decisions.length).every(node => /^stage\d\(\)$/.test(node.label))).toBe(true)
+      expect(compactRetrieveResult(result).matched_nodes.filter(node => /^stage\d\(\)$/.test(node.label))).toHaveLength(decisions.length)
+      if (prefix) expect(result[sourceDiscoveryCoreKey]?.node_ids).toContain(requested.find(node => node.label === 'stage0()')?.node_id)
+      const ownerIds = new Set(requested.map(node => node.node_id))
+      expect(result.relationships.some(edge => ownerIds.has(edge.from_id) && ownerIds.has(edge.to_id))).toBe(false)
+      expect(result.token_count).toBeLessThanOrEqual(3000)
+    }
   })
 
   it('does not let a shared HTTP handler name replace the requested behavior with unrelated call closures', () => {

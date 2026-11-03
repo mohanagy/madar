@@ -28,6 +28,8 @@ export interface TaskIntentSignalRule {
   id: string
   score: number
   any_phrases?: string[]
+  /** Leading instructions, rather than words anywhere in the request. */
+  any_prefixes?: string[]
   any_keywords?: string[]
   keyword_groups?: string[][]
 }
@@ -91,6 +93,11 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
         any_keywords: ['implement'],
       },
       {
+        id: 'implement-leading-change',
+        score: 10,
+        any_prefixes: ['change', 'please change'],
+      },
+      {
         id: 'implement-phrases',
         score: 9,
         any_phrases: ['implement issue', 'fix issue', 'address issue', 'add support', 'wire up'],
@@ -134,7 +141,7 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
       {
         id: 'impact-explicit',
         score: 9,
-        any_phrases: ['what breaks', 'blast radius', 'downstream impact', 'side effects'],
+        any_phrases: ['what breaks', 'what would break', 'what could break', 'blast radius', 'downstream impact', 'side effects'],
       },
       {
         id: 'impact-keywords',
@@ -191,13 +198,13 @@ export const TASK_INTENT_DEFINITIONS: TaskIntentDefinition[] = [
     kind: 'debug-flow',
     label: 'Debug flow',
     description: 'Trace failures, identify root causes, and follow error-producing paths.',
-    default_context_kind: 'impact',
+    default_context_kind: 'explain',
     priority: 6,
     rules: [
       {
         id: 'debug-explicit',
         score: 10,
-        any_phrases: ['trace why', 'root cause', 'stack trace', 'why is', 'why does', 'debug'],
+        any_phrases: ['trace why', 'root cause', 'stack trace', 'debug'],
       },
       {
         id: 'debug-failure',

@@ -11,7 +11,7 @@ import { selectSourceDependencies, sourceCallsiteBundlesKey } from '../../src/ru
 import { retrieveContext, withRetrieveSnippetBudget } from '../../src/runtime/retrieve.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { handleStdioRequest } from '../../src/runtime/stdio-server.js'
-import { resolveSourceSnippet, SOURCE_EVIDENCE_RESPONSE_FORMAT } from '../../src/runtime/source-evidence-response.js'
+import { compactRepeatedSourceMetadata, resolveSourceSnippet, SOURCE_EVIDENCE_RESPONSE_FORMAT } from '../../src/runtime/source-evidence-response.js'
 import * as continuations from '../../src/runtime/source-continuation.js'
 import type { SourceContinuationHandle } from '../../src/runtime/source-continuation.js'
 
@@ -132,6 +132,59 @@ function fixture(propertyScope = false, valueReferences = false) {
   return { root, file, lines, graph, idFor, entry, callee, dependencies, bundles, payload }
 }
 
+function controlFixture() {
+  const f = fixture()
+  const lines = [
+    'export function normalizeRecord(value) { return value + 1; }',
+    'export function rejectRecord(value) { return value - 1; }',
+    'export function processRecords(records, enabled) {',
+    '  let total = 0;',
+    '  try {',
+    '    if (enabled) {',
+    '      total = normalizeRecord(total);',
+    '    } else {',
+    ...Array.from({ length: 12 }, (_, i) => `      total += "OTHER_BRANCH_${i}_${'unrelated '.repeat(8)}".length;`),
+    '    }',
+    '  } catch (error) {',
+    ...Array.from({ length: 12 }, (_, i) => `    recordFailure("HANDLER_${i}_${'diagnostic '.repeat(8)}", error);`),
+    '  } finally {',
+    `    cleanupRecord("CLEANUP_DETAIL_${'closed record sequence '.repeat(24)}");`,
+    '  }',
+    '  register(records, (record) => {',
+    '    if (record > 0) {',
+    '      total = normalizeRecord(record);',
+    '    } else {',
+    '      total--;',
+    '    }',
+    '  }, enabled, "CALLBACK_ARGUMENT");',
+    '  total = rejectRecord(total);',
+    '  return total;',
+    '}',
+  ]
+  writeFileSync(f.file, lines.join('\n'))
+  const extracted = extractJs(f.file)
+  const graph = buildFromJson({ schema_version: 1, nodes: extracted.nodes, edges: extracted.edges }, { directed: true })
+  graph.graph.root_path = f.root
+  const idFor = (name: string): string => graph.nodeEntries().find(([, node]) => node.label === `${name}()`)![0]
+  const entry = idFor('processRecords'), callee = idFor('normalizeRecord')
+  const dependencies = selectSourceDependencies(graph, [entry], f.root, new Map(), { includeCallers: false, inspectionOnly: true })
+  const sourceNode = (name: string): SourceNode => {
+    const id = idFor(name), range = lineRangeFromSourceLocation(graph.nodeAttributes(id).source_location)!
+    return { node_id: id, label: `${name}()`, source_file: f.file, snippet_scope: 'symbol',
+      snippet_line_range: { start_line: range.start, end_line: range.end }, snippet: lines.slice(range.start - 1, range.end).join('\n') }
+  }
+  const caller = sourceNode('processRecords'), range = caller.snippet_line_range
+  caller.snippet_omitted_ranges = [{ start_line: range.start_line + 2, end_line: range.end_line - 1 }]
+  caller.snippet_truncated = true
+  caller.snippet = [...lines.slice(range.start_line - 1, range.start_line + 1),
+    `[omitted lines ${range.start_line + 2}-${range.end_line - 1}]`, lines[range.end_line - 1]].join('\n')
+  const payload = structuredClone(f.payload)
+  record(payload.pack).matched_nodes = [caller, sourceNode('normalizeRecord'), sourceNode('rejectRecord')]
+  record(payload.pack).relationships = [callee, idFor('rejectRecord')].map(to_id => ({ from_id: entry, to_id, relation: 'calls' }))
+  const bundles = [callee, idFor('rejectRecord')].map(id => dependencies.source_callsite_bundles!.find(bundle => bundle.from_id === entry && bundle.to_id === id)!)
+  return { ...f, lines, graph, idFor, entry, callee, dependencies, bundles, payload }
+}
+
 function verifiedLines(payload: RecordValue, file: string, lines: readonly string[]): Set<number> {
   const seen = new Set<number>(), entries = nodes(payload)
   for (const node of entries.filter(node => resolve(dirname(file), node.source_file) === resolve(file))) {
@@ -162,6 +215,126 @@ function finish(f: ReturnType<typeof fixture>, budget: number, bundles = f.bundl
 }
 
 describe('append-only final callsite source completion', () => {
+  it('builds bounded control context alternatives without changing legacy all-sites output', () => {
+    const f = controlFixture(), bundle = f.bundles[0]!
+    expect(bundle.sites).toHaveLength(2)
+    expect(bundle.range_alternatives).toHaveLength(2)
+    const text = (ranges: Range[]) => ranges.map(range => f.lines.slice(range.start_line - 1, range.end_line).join('\n')).join('\n')
+    const preferred = text(bundle.range_alternatives![0]!), shells = text(bundle.range_alternatives![1]!)
+    for (const token of ['if (enabled)', '} else {', 'catch (error)', '} finally {', 'register(records, (record) => {',
+      'if (record > 0)', 'total = normalizeRecord(total);', 'total = normalizeRecord(record);', '}, enabled, "CALLBACK_ARGUMENT");']) {
+      expect(preferred).toContain(token); expect(shells).toContain(token)
+    }
+    expect(preferred).toContain('CLEANUP_DETAIL_'); expect(preferred).toContain('total--;')
+    expect(shells).not.toContain('CLEANUP_DETAIL_'); expect(shells).not.toContain('total--;')
+    for (const variant of [preferred, shells]) { expect(variant).not.toContain('HANDLER_'); expect(variant).not.toContain('OTHER_BRANCH_') }
+    const legacy = f.bundles.map(({ range_alternatives: _alternatives, ...bundle }) => bundle)
+    expect(finish(f, 10000)).toEqual(finish(f, 10000, legacy))
+  })
+
+  it('adds bounded control context atomically after all legacy additions and preserves source recovery', () => {
+    const f = controlFixture(), first = f.bundles[0]!, late = f.bundles[1]!
+    const { range_alternatives, ...base } = first
+    const compact = { ...base, ranges: range_alternatives![0]! }
+    const estimate = finish(f, 10000, [compact, late])
+    const budget = Number(record(estimate.payload.serialized_budget).token_count) + 4
+    const result = finish(f, budget)
+    const original = verifiedLines(f.payload, f.file, f.lines), delivered = verifiedLines(result.payload, f.file, f.lines)
+    for (const line of original) expect(delivered.has(line)).toBe(true)
+    for (const range of compact.ranges) for (let line = range.start_line; line <= range.end_line; line++) expect(delivered.has(line)).toBe(true)
+    expect(resolveSourceSnippet(nodes(result.payload)[0]!, nodes(result.payload))).not.toContain('HANDLER_')
+    expect(record(result.payload.pack).relationships).toEqual(record(f.payload.pack).relationships)
+    expect(result.payload.evidence).toEqual(f.payload.evidence)
+    expect([...result.store.keys()]).toEqual(nodes(result.payload).flatMap(node => typeof node.source_expand_handle === 'string' ? [node.source_expand_handle] : []))
+    const handle = result.store.get(String(nodes(result.payload)[0]!.source_expand_handle))!
+    expect(handle).toBeDefined()
+    for (const line of delivered) expect(handle.pending_ranges.some(range => range.start_line <= line && range.end_line >= line)).toBe(false)
+    // Measure both complete cursor-bearing alternatives: a price without the
+    // late callsite cannot bound its union because cursor token sizes can differ.
+    const shell = { ...base, ranges: range_alternatives![1]! }
+    const lower = compactRepeatedSourceMetadata(finish(f, 10000, [shell, late]).payload, 10000)
+    const upper = compactRepeatedSourceMetadata(estimate.payload, 10000)
+    for (const [payload, ranges] of [[lower, shell.ranges], [upper, compact.ranges]] as const) {
+      const lines = verifiedLines(payload, f.file, f.lines)
+      for (const range of [...ranges, ...late.ranges]) for (let line = range.start_line; line <= range.end_line; line++) expect(lines.has(line)).toBe(true)
+      expect(nodes(payload)[0]!.source_expand_handle).toEqual(expect.any(String))
+    }
+    const priceAt = (payload: RecordValue, cap: number): number => {
+      const priced = structuredClone(payload)
+      priced.serialized_budget = { max_tokens: cap, token_count: 0, enforced: true }
+      for (let i = 0; i < 12; i++) {
+        const count = estimateQueryTokens(JSON.stringify(priced))
+        if (record(priced.serialized_budget).token_count === count) break
+        record(priced.serialized_budget).token_count = count
+      }
+      const count = estimateQueryTokens(JSON.stringify(priced))
+      expect(record(priced.serialized_budget).token_count).toBe(count)
+      return count
+    }
+    const tight = Math.floor((priceAt(lower, 10000) + priceAt(upper, 10000)) / 2)
+    // Reserve every late legacy range while excluding the preferred optional
+    // context at the actual cap, including its exact cursor and budget receipt.
+    expect(priceAt(lower, tight)).toBeLessThanOrEqual(tight)
+    expect(priceAt(upper, tight)).toBeGreaterThan(tight)
+    const tightResult = finish(f, tight), tightLines = verifiedLines(tightResult.payload, f.file, f.lines)
+    for (const range of late.ranges) for (let line = range.start_line; line <= range.end_line; line++) expect(tightLines.has(line)).toBe(true)
+    for (const site of first.sites) expect(tightLines.has(f.lines.join('\n').slice(0, site.start_offset).split('\n').length)).toBe(true)
+    expect(resolveSourceSnippet(nodes(tightResult.payload)[0]!, nodes(tightResult.payload))).not.toContain('CLEANUP_DETAIL_')
+    const laterOnly = finish(f, tight, [late])
+    for (const line of verifiedLines(laterOnly.payload, f.file, f.lines)) expect(tightLines.has(line)).toBe(true)
+  })
+
+  it('prices bounded control context after repeated metadata while reserving its actual source cursor', () => {
+    const f = controlFixture(), first = f.bundles[0]!, late = f.bundles[1]!
+    f.payload.task_intent = 'explain'
+    f.payload.cache = { status: 'miss', graph_version: 'fixture-version' }
+    record(record(f.payload.governance).graph_freshness).graph_version = 'fixture-version'
+    record(f.payload.evidence).missing_phases = []
+    record(f.payload.pack).source_dependencies = { unresolved_groups: [{ source_file: f.file, reason: 'unresolved',
+      calls: [5, 6, 7, 8].map(line_number => ({ line_number, callee: 'recordFailure' })) }] }
+    const { range_alternatives, ...legacy } = first
+    const shell = { ...legacy, ranges: range_alternatives![1]! }
+    const uncompressed = finish(f, 10000, [shell, late])
+    const projected = compactRepeatedSourceMetadata(uncompressed.payload, 10000)
+    const budget = Number(record(projected.serialized_budget).token_count) + 8
+    expect(estimateQueryTokens(JSON.stringify(uncompressed.payload))).toBeGreaterThan(budget)
+    // Both calls fit only through optional pricing: the ordinary full-range
+    // path retains the original metadata and cannot reserve this same source.
+    const ordinary = finish(f, budget, [shell, late]), result = finish(f, budget)
+    const delivered = verifiedLines(result.payload, f.file, f.lines)
+    const ordinaryLines = verifiedLines(ordinary.payload, f.file, f.lines)
+    expect(first.sites.some(site => !ordinaryLines.has(f.lines.join('\n').slice(0, site.start_offset).split('\n').length))).toBe(true)
+    for (const line of verifiedLines(f.payload, f.file, f.lines)) expect(delivered.has(line)).toBe(true)
+    for (const range of [...shell.ranges, ...late.ranges]) for (let line = range.start_line; line <= range.end_line; line++) expect(delivered.has(line)).toBe(true)
+    expect(result.payload.task_intent).toBeUndefined()
+    expect(record(result.payload.cache)).toEqual({ status: 'miss' })
+    expect(record(result.payload.evidence).answerability).toEqual(record(f.payload.evidence).answerability)
+    expect(record(result.payload.pack).relationships).toEqual(record(f.payload.pack).relationships)
+    const handle = result.store.get(String(nodes(result.payload)[0]!.source_expand_handle))!
+    expect(handle).toBeDefined()
+    for (const line of delivered) expect(handle.pending_ranges.some(range => range.start_line <= line && range.end_line >= line)).toBe(false)
+    expect([...result.store.keys()]).toEqual(nodes(result.payload).flatMap(node => typeof node.source_expand_handle === 'string' ? [node.source_expand_handle] : []))
+    // When even the compact proposal is too large, source, metadata and stores
+    // remain exactly those of the completed legacy pass.
+    const tightBudget = Number(record(finish(f, 10000, [late]).payload.serialized_budget).token_count) + 1
+    expect(finish(f, tightBudget)).toEqual(finish(f, tightBudget, [late]))
+  })
+
+  it('rejects invalid bounded control context and stale proof instead of delivering an easy site', () => {
+    const f = controlFixture(), first = f.bundles[0]!, late = f.bundles[1]!
+    const baseline = finish(f, 10000, [late])
+    const budget = Number(record(baseline.payload.serialized_budget).token_count) + 100
+    const expected = finish(f, budget, [late])
+    const incomplete = [{ start_line: first.ranges[0]!.start_line, end_line: first.ranges[0]!.end_line }]
+    for (const alternatives of [[incomplete], [first.ranges], [incomplete, incomplete, incomplete]]) {
+      expect(finish(f, budget, [{ ...first, range_alternatives: alternatives }, late])).toEqual(expected)
+    }
+    expect(finish(f, budget, f.bundles, () => false)).toEqual(finish(f, budget, []))
+    writeFileSync(f.file, f.lines.join('\n').replace('normalizeRecord(record)', 'normalizeRecord(total)'))
+    const stale = finish(f, budget)
+    expect(resolveSourceSnippet(nodes(stale.payload)[0]!, nodes(stale.payload))).not.toContain('total = normalizeRecord(record);')
+  })
+
   it('binds distinct calls and complete conditional/callback statements while refusing mutable aliases', () => {
     const f = fixture(true), all = f.dependencies.source_callsite_bundles ?? []
     expect(f.bundles).toHaveLength(1)

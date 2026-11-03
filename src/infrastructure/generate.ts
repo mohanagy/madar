@@ -689,7 +689,7 @@ export function generateGraph(rootPath = '.', options: GenerateGraphOptions = {}
     const spiExtraction = built
       ? withExtractionStrategy(projectSpiToExtraction(built.spi, {
           root: resolvedRootPath,
-          ...(extractionMode === 'spi' ? { resolveCaseCollisions: true } : {}),
+          ...(extractionMode === 'spi' ? { resolveCaseCollisions: true } : { resolveTopLevelCaseCollisions: true }),
           ...(sharedFileStems ? { fileStemByAbsolutePath: sharedFileStems } : {}),
         }), 'spi')
       : emptyExtraction()

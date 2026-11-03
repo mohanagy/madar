@@ -1,6 +1,6 @@
 import { sliceCandidatesForRetrieve } from '../../src/runtime/retrieve/slicing.js'
 import { extractPromptExclusions } from '../../src/runtime/retrieval-gate.js'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +9,7 @@ import { buildFromJson } from '../../src/pipeline/build.js'
 import { extractJs } from '../../src/pipeline/extract.js'
 import { retrieveContext, retrieveContextAsync, readQueryEvidenceSnippet, withRetrieveSnippetBudget } from '../../src/runtime/retrieve.js'
 import { interpretRetrievalQuery } from '../../src/runtime/retrieve/pipeline.js'
-import { searchSourceBodies, searchSourceBodyQuestions, sourceDeclarationQualifiedName, sourceDeclarationKind, sourceRangeMatchesSymbol, resolveSourceSymbolRange, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, sourceQueryLiterals, sourceQueryWithoutLiteralSpans } from '../../src/runtime/retrieve/source-evidence.js'
+import { coherentSourceSnippet, searchSourceBodies, searchSourceBodyQuestions, sourceDeclarationQualifiedName, sourceDeclarationKind, sourceRangeMatchesSymbol, resolveSourceSymbolRange, sourceQueryIsLiteralLookup, sourceQueryRequestsClauseLocations, sourceQueryLiterals, sourceQueryWithoutLiteralSpans } from '../../src/runtime/retrieve/source-evidence.js'
 
 const roots: string[] = []
 afterEach(() => { roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })); vi.doUnmock('../../src/runtime/semantic.js') })
@@ -43,6 +43,44 @@ function workspace(prefix = 'madar-source-evidence-') {
 }
 
 describe('source evidence retrieval', () => {
+  it('keeps project framing lexical so incidental brand literals cannot exhaust behavior admission', () => {
+    const { graph, root } = workspace()
+    const path = join(root, 'src', 'reservations.ts')
+    writeFileSync(path, [
+      ...Array.from({ length: 130 }, (_, index) => `export function banner${index}() { return "LedgerGarden"; }`),
+      'export function settleReservation(attempt: { status: string; credit: number }) {',
+      '  // Refund a reservation credit and persist durable attempt state exactly once.',
+      '  if (attempt.status === "reserved") { attempt.status = "refunded"; attempt.credit += 1; }',
+      '  return attempt;',
+      '}',
+    ].join('\n'))
+    const extraction = extractJs(path)
+    for (const node of extraction.nodes) graph.addNode(node.id, node)
+    const owner = extraction.nodes.find(node => node.label === 'settleReservation()')!.id
+    const question = 'In the LedgerGarden source, trace reservation credit refund and durable attempt state.'
+    const [behavior, explicit] = searchSourceBodyQuestions(graph, [question, 'Where is `LedgerGarden` used?'], root)
+    expect(behavior!.matches.has(owner)).toBe(true)
+    expect(behavior!.matches.get(owner)?.exact_literal).toBe(false)
+    expect(behavior!.matches.size).toBe(128)
+    expect(behavior!.bounded).toBe(true)
+    expect(explicit!.matches.has(owner)).toBe(false)
+    expect(explicit!.matches.size).toBe(128)
+    expect([...explicit!.matches.values()].every(match => match.exact_literal)).toBe(true)
+    expect(sourceQueryLiterals(question)).toEqual([])
+    expect(sourceQueryWithoutLiteralSpans(question)).toBe(question)
+    expect(sourceQueryLiterals('In LedgerGarden repository, find the refund implementation.')).toEqual([])
+    for (const protectedQuestion of [
+      'In the `LedgerGarden` source, trace refunds.',
+      '"In the LedgerGarden source, trace refunds."',
+      '```text\nIn the LedgerGarden source, trace refunds.\n```',
+      'In the LedgerGarden() source, trace refunds.',
+      'In the src/LedgerGarden.ts source, trace refunds.',
+      'In the LedgerGarden source, trace LedgerGarden() and its callers.',
+      'Find the LedgerGarden implementation.',
+      'In the LedgerGarden source trace refunds.',
+    ]) expect(sourceQueryLiterals(protectedQuestion), protectedQuestion).toContain('LedgerGarden')
+  })
+
   it('consumes matching quote spans without manufacturing literals between short or malformed values', () => {
     expect(sourceQueryLiterals("'' 'i' \"\" \"g\" `` 'useful value' \"second value\""))
       .toEqual(['useful value', 'second value'])
@@ -84,6 +122,37 @@ describe('source evidence retrieval', () => {
       .toEqual(['APP_ERROR', 'userValue', 'snake_case', '/api/user/path', '#slot'])
     expect(sourceQueryLiterals(Array.from({ length: 10 }, (_, index) => `"literal ${index}"`).join(' ')))
       .toEqual(Array.from({ length: 8 }, (_, index) => `literal ${index}`))
+  })
+
+  it('preserves complete path lexemes without manufacturing slash-list suffix literals', () => {
+    for (const question of [
+      'Explain matching issuer/subject/audience/chat and time boundaries.',
+      'Compare read/write/execute permissions and success/failure/retry outcomes.',
+    ]) {
+      expect(sourceQueryLiterals(question), question).toEqual([])
+      expect(sourceQueryWithoutLiteralSpans(question), question).toBe(question)
+    }
+    const paths = [
+      ['Explain /api/user/path behavior.', '/api/user/path'],
+      ['Explain src/auth/service.ts behavior.', 'src/auth/service.ts'],
+      [String.raw`Explain C:\src\auth\service.ts behavior.`, String.raw`C:\src\auth\service.ts`],
+      ['Explain ./src/auth behavior.', './src/auth'],
+      ['Explain ../src/auth behavior.', '../src/auth'],
+      ['Explain https://example.test/api/user/path behavior.', 'https://example.test/api/user/path'],
+      ['src/auth', 'src/auth'],
+      ['Find src/auth', 'src/auth'],
+      ['Locate directory src/auth', 'src/auth'],
+      ['Find "issuer/subject/audience/chat".', 'issuer/subject/audience/chat'],
+    ] as const
+    for (const [question, path] of paths) {
+      expect(sourceQueryLiterals(question), question).toEqual([path])
+      expect(sourceQueryLiterals(question), question).not.toContain('/subject/audience/chat')
+      const quoted = question.includes(`"${path}"`) ? `"${path}"` : path
+      expect(sourceQueryWithoutLiteralSpans(question), question)
+        .toBe(question.replace(quoted, ' '.repeat(quoted.length)))
+    }
+    expect(interpretRetrievalQuery({ question: 'Explain src/auth/service.ts behavior.', budget: 1000 })
+      .retrieval_gate.signals.mentioned_paths).toContain('src/auth/service.ts')
   })
 
   it('verifies concrete constructor source and retains range and ownership ambiguity checks', () => {
@@ -129,6 +198,34 @@ describe('source evidence retrieval', () => {
     expect([...behavior!.matches.keys()]).toEqual(['metrics_describesessionexpiration'])
     expect(behavior!.matches.get('metrics_describesessionexpiration')?.exact_literal).toBe(false)
     expect(empty).toEqual({ matches: new Map(), scanned_files: 0, scanned_bytes: 0, bounded: false })
+  })
+
+  it('uses positive indexed literals to navigate the file cap without trusting stale hints', () => {
+    const { graph, root } = workspace()
+    const add = (name: string, body: string, snippet?: string) => {
+      const path = join(root, 'src', `${name}.ts`)
+      writeFileSync(path, body)
+      graph.addNode(name, { label: 'value()', file_type: 'code', source_file: path,
+        source_location: 'L1', ...(snippet ? { snippet } : {}) })
+      return realpathSync(path)
+    }
+    for (let index = 1023; index >= 0; index--) {
+      add(`a${String(index).padStart(4, '0')}`, 'export function value() { return 0; }')
+    }
+    const stale = add('z-stale', 'export function value() { return "removed"; }', 'return "READY_SIGNAL";')
+    const target = add('z-target', 'export function value() { return "READY_SIGNAL"; }', 'return "READY_SIGNAL";')
+    const prefix = add('z-prefix', 'export function value() { return "READY_SIGNAL"; }', 'return "READY_SIGNAL_EXTRA";')
+    const excluded = add('z-excluded', 'export function value() { return "AVOID_SIGNAL"; }', 'return "AVOID_SIGNAL";')
+    const oversized = add('z-oversized', ' '.repeat(300 * 1024), 'return "READY_SIGNAL";')
+    const cache = new Map<string, string[] | null>()
+    const result = searchSourceBodies(graph, 'Where is "READY_SIGNAL" thrown? Exclude "AVOID_SIGNAL".', root, cache)
+    expect(result.scanned_files).toBe(1024)
+    expect(result.scanned_bytes).toBeLessThan(16 * 1024 * 1024)
+    expect(result.bounded).toBe(true)
+    expect([...result.matches.keys()]).toEqual(['z-target'])
+    expect(result.matches.get('z-target')?.exact_literal).toBe(true)
+    expect([...cache.keys()].slice(0, 2)).toEqual([stale, target])
+    for (const path of [prefix, excluded, oversized]) expect(cache.has(path), path).toBe(false)
   })
 
   it('ranks concentrated source evidence above vocabulary scattered through a large owner', () => {
@@ -354,6 +451,96 @@ describe('source evidence retrieval', () => {
     }
   })
 
+  it('retains the error path and returned JSX binding of an already selected callback within the excerpt bounds', () => {
+    const { root } = workspace()
+    const path = join(root, 'src', 'action-panel.tsx')
+    const lines = Array.from({ length: 129 }, () => '  // padding')
+    const source: Record<number, string> = {
+      1: 'export function ActionPanel({ recordType, className }: Props) {',
+      3: '  const entries = [];', 4: '  let loading = false;',
+      30: '  load().catch((error) => {', 31: '    log(error);', 32: '  });',
+      36: '  const dispatch = wrap(', 37: '    async (event) => {',
+      40: '      if (!authenticated) {', 42: '        notify.error("Sign in to save entries");',
+      43: '        return;', 44: '      }', 46: '      if (loading) return;', 47: '      loading = true;',
+      49: '      const method = active ? "DELETE" : "POST";',
+      51: '      try {', 52: '        const token = await credentials();',
+      53: '        const response = await send(', 54: '          "/api/entries",',
+      55: '          { method, token, recordType }', 60: '        );',
+      62: '        if (!response.ok) {', 63: '          const data = await response.json();',
+      64: '          throw new Error(data.error ?? "Failed to update entries");', 65: '        }',
+      67: '        persist(await response.json());',
+      80: '      } catch (error) {', 81: '        const message = error instanceof Error ? error.message : "Failed";',
+      82: '        notify.error(message);', 83: '        log(error);', 84: '      } finally {',
+      85: '        if (mounted) {', 86: '          loading = false;', 87: '        }', 88: '      }',
+      89: '    },', 90: '    [authenticated, loading, recordType]', 91: '  );',
+      101: '  return (', 102: '    <Control', 103: '      kind="compact"',
+      106: '      onAction={dispatch}', 109: '    >', 110: '      Continue', 122: '    </Control>',
+      123: '  );', 129: '}',
+    }
+    for (const [line, text] of Object.entries(source)) lines[Number(line) - 1] = text
+    const question = 'If I already have 12 saved entries and try to save another record type, does the app reject the addition, and what message reaches me? Also what happens for an existing entry?'
+    const baseline = (current: string[], prompt = question) => coherentSourceSnippet(current, { start: 1, end: current.length }, prompt, 'symbol')!
+    const snippet = (current: string[], prompt = question) => {
+      writeFileSync(path, current.join('\n'))
+      return readQueryEvidenceSnippet(path, 1, { question: prompt, label: 'ActionPanel()', sourceLocation: `L1-L${current.length}`, rootPath: root })!
+    }
+    const before = baseline(lines), after = snippet(lines)
+    expect(before.snippet).not.toContain('notify.error(message)')
+    for (const text of ['const data = await response.json()', 'throw new Error(data.error', '} catch (error)',
+      'notify.error(message)', '} finally {', 'onAction={dispatch}', '</Control>']) expect(after.snippet).toContain(text)
+    const visible = (gaps: Array<{ start_line: number; end_line: number }>) => lines.map((_, index) => index + 1)
+      .filter(line => !gaps.some(gap => line >= gap.start_line && line <= gap.end_line))
+    const prior = visible(before.omittedRanges), retained = visible(after.snippet_omitted_ranges ?? [])
+    expect(retained).toEqual(expect.arrayContaining(prior))
+    expect(retained.length).toBeLessThanOrEqual(80)
+    expect(after.snippet.length).toBeLessThanOrEqual(12_000)
+    const variant = (...changes: Array<[number, string]>) => {
+      const current = [...lines]; for (const [line, text] of changes) current[line - 1] = text; return current
+    }
+    const splitHandler = variant([5, source[36]!], [6, source[37]!], [25, source[51]!],
+      [36, '  // padding'], [37, '  // padding'], [51, '  // padding'],
+      [84, '      }'], [85, '      finally'], [86, '      {'], [87, '        loading = false;'])
+    const shellQuestion = question.replace('try to save', 'save')
+    expect(baseline(splitHandler, shellQuestion).snippet).not.toContain('try {')
+    const shells = snippet(splitHandler, shellQuestion).snippet
+    expect(shells).toContain('try {')
+    expect(shells).toContain('      finally\n      {')
+    const nestedJsx = snippet(variant([102, '    <Panel>'], [103, '      {'], [104, '      ('],
+      [105, '        <Control'], [123, '      )}</Panel>'], [124, '  );']))
+    expect(nestedJsx.snippet).toContain('    <Panel>\n      {\n      (')
+    expect(nestedJsx.snippet).toContain('      )}</Panel>\n  );')
+    expect(visible(nestedJsx.snippet_omitted_ranges ?? []).length).toBeLessThanOrEqual(80)
+    for (const current of [
+      variant([96, '  dispatch = replacement;']),
+      variant([96, '  function nested(dispatch: unknown) { return dispatch; }']),
+      variant([106, '      onAction={alias}']),
+      variant([102, '    <section>{shown ? ('], [103, '      <Control'],
+        [123, '    ) : null}</section>'], [124, '  );']),
+      variant([81, `        const message = "${'x'.repeat(12_000)}";`]),
+      variant([65, '          log(response);'], [77, '        }']),
+    ]) expect(snippet(current).snippet).toBe(baseline(current).snippet)
+    for (const prompt of [`${question} Exclude "OTHER_MARKER".`, 'Where is "save entries"?']) {
+      expect(snippet(lines, prompt).snippet).toBe(baseline(lines, prompt).snippet)
+    }
+  })
+
+  it('does not use an excluded marker to select another excerpt, while preserving quoted source data', () => {
+    const { handler } = workspace()
+    const lines = ['export function largeHandler() {', ...Array.from({ length: 160 }, (_, i) => `  const value${i} = ${i};`), '}']
+    lines[20] = '  const primary = "PRIMARY_SIGNAL";'
+    lines[140] = '  const legacy = "LEGACY_MARKER";'
+    writeFileSync(handler, lines.join('\n'))
+    const snippet = (question: string) => readQueryEvidenceSnippet(handler, 1, {
+      question, label: 'largeHandler()', sourceLocation: `L1-L${lines.length}`,
+    })
+    const excluded = snippet('Explain "PRIMARY_SIGNAL" behavior; exclude "LEGACY_MARKER".')
+    expect(excluded?.snippet).toContain('const primary = "PRIMARY_SIGNAL"')
+    expect(excluded?.snippet).not.toContain('const legacy = "LEGACY_MARKER"')
+    const requested = snippet('Explain "PRIMARY_SIGNAL" and "LEGACY_MARKER" behavior.')
+    expect(requested?.snippet).toContain('const primary = "PRIMARY_SIGNAL"')
+    expect(requested?.snippet).toContain('const legacy = "LEGACY_MARKER"')
+  })
+
   it('selects separate executable clauses and lexical wiring without comment or nested-owner substitution', () => {
     const { root } = workspace()
     mkdirSync(join(root, 'lib'))
@@ -412,11 +599,17 @@ describe('source evidence retrieval', () => {
     const question = 'Find JavaScript source connecting ordinary registration to hook.js, including registerExtension and shouldSkipExtension. Also locate message construction using the route context Envelope constructor and any constructor selection that skips unmarked envelope constructors. Restrict to entry.js and lib/*.js.'
     const result = retrieveContext(graph, { question, taskKind: 'explain', budget: 4000 })
     const source = result.matched_nodes.map(node => node.snippet ?? '').join('\n')
+    const diagnostic = retrieveContext(graph, { question, taskKind: 'explain', taskIntent: 'debug-flow', budget: 4000 })
+    const diagnosticSource = diagnostic.matched_nodes.map(node => node.snippet ?? '').join('\n')
     for (const required of ["const hook = require('./lib/hook')", 'new Registry({ expose:', 'registry.override = hook',
       'const skip = registerExtension(fn)', 'return shouldSkipExtension(fn)', 'fn.skip === true',
       'app.once("ready", () => {', 'if (context.enabled)', 'while (!context.Envelope.marked',
-      'context.Envelope = context.Envelope.parent', 'new context.Envelope(input)']) expect(source).toContain(required)
+      'context.Envelope = context.Envelope.parent', 'new context.Envelope(input)']) {
+      expect(source).toContain(required)
+      expect(diagnosticSource).toContain(required)
+    }
     expect(result.matched_nodes.some(node => ['unrelatedOuter()', 'schemaReport()'].includes(node.label))).toBe(false)
+    expect(diagnostic.matched_nodes.some(node => ['unrelatedOuter()', 'schemaReport()'].includes(node.label))).toBe(false)
     const bindingOwner = result.matched_nodes.find(node => node.label === 'entry.js')
     expect(bindingOwner?.snippet_scope).toBe('source_file')
     expect(bindingOwner?.snippet).toBe(`const hook = require('./lib/hook')\n[omitted lines 2-${entry.split('\n').length}]`)

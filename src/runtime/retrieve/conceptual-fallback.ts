@@ -350,7 +350,7 @@ function localPredicateSubjectMatches(
   return subject.terms.length > 0 && subject.terms.every(term => sourceTerms.includes(term))
 }
 
-function assessedQueryEvidenceObligations(question: string): AssessedQueryEvidenceObligation[] {
+function assessedQueryEvidenceObligations(question: string, rawClauses?: string[]): AssessedQueryEvidenceObligation[] {
   const evidenceQuestion = collapseOxfordEvidenceLists(stripRepeatedFlowChecklists(retrievalSearchPrompt(question)
     .replace(READ_ONLY_CONSTRAINT_PATTERN, ' ')
     .replace(NO_WRITE_CONSTRAINT_PATTERN, ' ')
@@ -368,6 +368,10 @@ function assessedQueryEvidenceObligations(question: string): AssessedQueryEviden
   let boundaryTerms: string[] = []
   let predicatePrefix = ''
   const append = (segment: string): void => {
+    // Lexical source lookup needs the authored decision words before conceptual
+    // normalization removes directives, collapses concepts or caps term counts.
+    const raw = `${predicatePrefix}${segment.trim()}`
+    if (rawClauses && raw && !rawClauses.includes(raw) && rawClauses.length < MAX_QUERY_OBLIGATIONS) rawClauses.push(raw)
     const terms = [...new Set([...boundaryTerms, ...normalizedQueryTerms(segment)])]
     const key = terms.join('\u0000')
     if (terms.length > 0 && !seen.has(key) && groups.length < MAX_QUERY_OBLIGATIONS) {
@@ -413,6 +417,14 @@ function assessedQueryEvidenceObligations(question: string): AssessedQueryEviden
 export function queryEvidenceObligations(question: string): QueryEvidenceObligation[] {
   return assessedQueryEvidenceObligations(question).map(({ index, terms }) => ({ index, terms }))
 }
+
+/** Reuse prose/code boundaries without exposing conceptual normalization as source text. */
+export function querySourceEvidenceClauses(question: string): string[] {
+  const clauses: string[] = []
+  assessedQueryEvidenceObligations(question, clauses)
+  return clauses
+}
+
 
 function queryTerms(obligations: readonly QueryEvidenceObligation[]): string[] {
   // Every retained obligation must be searchable by the anchor scorer.

@@ -16,6 +16,7 @@ import {
   stripHashComment,
 } from './core.js'
 import { unparenthesizeExpression } from './typescript-utils.js'
+import { declarationIdentityKey, topLevelCaseIdentityPlan } from './top-level-case-identities.js'
 
 export interface ResolveCrossFilePythonImportsOptions {
   contextNodes?: readonly ExtractionNode[]
@@ -212,6 +213,8 @@ function collectTopLevelExportedJsBindings(
   knownFiles: ReadonlySet<string>,
   cache: Map<string, Map<string, string>>,
   compilerOptionsCache: Map<string, ts.CompilerOptions | null>,
+  caseInterfaceIds: Set<string>,
+  caseTargetIds: Set<string>,
 ): Map<string, string> {
   const resolvedFilePath = resolve(filePath)
   const cached = cache.get(resolvedFilePath)
@@ -253,9 +256,15 @@ function collectTopLevelExportedJsBindings(
       scriptKindForPath(resolvedTargetPath),
     )
     const fileStem = fileStemForPath(resolvedTargetPath)
+    const casePlan = topLevelCaseIdentityPlan(sourceFile, fileStem)
+    for (const [key, id] of casePlan.ids) {
+      caseTargetIds.add(id)
+      if (key.startsWith('interface\0')) caseInterfaceIds.add(id)
+    }
     const record = (exportName: string | undefined, targetName: string | undefined = exportName): void => {
       if (exportName && targetName) {
-        definition.localBindings.set(exportName, _makeId(fileStem, targetName))
+        definition.localBindings.set(exportName, casePlan.ids.get(declarationIdentityKey('function', targetName))
+          ?? casePlan.ids.get(declarationIdentityKey('interface', targetName)) ?? _makeId(fileStem, targetName))
       }
     }
 
@@ -1710,6 +1719,8 @@ export function resolveCrossFileRelativeJsImports(
   const nodes = [...extraction.nodes]
   const seenNodeIds = new Set(nodes.map((node) => node.id))
   const exportedBindingsByFile = new Map<string, Map<string, string>>()
+  const caseInterfaceIds = new Set<string>()
+  const caseTargetIds = new Set<string>()
 
   const edges = [...extraction.edges]
   const existingEdges = new Set(edges.map((edge) => `${edge.source}|${edge.target}|${edge.relation}`))
@@ -1717,7 +1728,7 @@ export function resolveCrossFileRelativeJsImports(
   for (const filePath of knownFiles) {
     exportedBindingsByFile.set(
       filePath,
-      collectTopLevelExportedJsBindings(filePath, knownFiles, exportedBindingsByFile, compilerOptionsCache),
+      collectTopLevelExportedJsBindings(filePath, knownFiles, exportedBindingsByFile, compilerOptionsCache, caseInterfaceIds, caseTargetIds),
     )
   }
 
@@ -1749,8 +1760,9 @@ export function resolveCrossFileRelativeJsImports(
     }
 
     const sourceFile = ts.createSourceFile(filePath, sourceText, ts.ScriptTarget.Latest, true, scriptKindForPath(filePath))
+    const casePlan = topLevelCaseIdentityPlan(sourceFile, fileStem)
     const importedTargets = new Map<string, string>()
-    const namespaceTargets = new Map<string, { targetFilePath: string; line: number }>()
+    const namespaceTargets = new Map<string, { targetFilePath: string; line: number; typeOnly?: boolean }>()
     const externalImportedBindings = new Map<string, { localName: string; line: number }>()
     const externalNamespaceBindings = new Map<string, { localName: string; line: number }>()
     type ScopeFrame = { bindings: Set<string>; functionScope: boolean }
@@ -1874,7 +1886,9 @@ export function resolveCrossFileRelativeJsImports(
         scopeChain.pop()
       }
     }
-    const functionOwnerId = (ownerId: string | undefined, functionName: string): string => _makeId(ownerId ?? fileStem, functionName)
+    const functionOwnerId = (ownerId: string | undefined, functionName: string, topLevel = false): string =>
+      (topLevel ? casePlan.ids.get(declarationIdentityKey('function', functionName)) : undefined)
+        ?? _makeId(ownerId ? casePlan.logicalOwners.get(ownerId) ?? ownerId : fileStem, functionName)
     const hasDefaultExportModifier = (node: ts.Node): boolean => {
       const modifiers = ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined
       return (
@@ -1905,7 +1919,7 @@ export function resolveCrossFileRelativeJsImports(
         if (targetFilePath) {
           const targetId = resolveImportedTargetId(targetFilePath, 'default')
           if (targetId) {
-            importedTargets.set(importClause.name.text, targetId)
+            if (!importClause.isTypeOnly || !caseTargetIds.has(targetId)) importedTargets.set(importClause.name.text, targetId)
             addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, targetId, 'imports_from', filePath, line))
           }
         } else {
@@ -1919,7 +1933,7 @@ export function resolveCrossFileRelativeJsImports(
 
       if (ts.isNamespaceImport(importClause.namedBindings)) {
         if (targetFilePath) {
-          namespaceTargets.set(importClause.namedBindings.name.text, { targetFilePath, line })
+          namespaceTargets.set(importClause.namedBindings.name.text, { targetFilePath, line, ...(importClause.isTypeOnly ? { typeOnly: true } : {}) })
         } else {
           externalNamespaceBindings.set(importClause.namedBindings.name.text, {
             localName: importClause.namedBindings.name.text,
@@ -1938,7 +1952,7 @@ export function resolveCrossFileRelativeJsImports(
             continue
           }
 
-          importedTargets.set(localName, targetId)
+          if ((!importClause.isTypeOnly && !element.isTypeOnly) || !caseTargetIds.has(targetId)) importedTargets.set(localName, targetId)
           addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, targetId, 'imports_from', filePath, line))
           continue
         }
@@ -2070,7 +2084,7 @@ export function resolveCrossFileRelativeJsImports(
 
       if (ts.isFunctionDeclaration(node) && node.name) {
         declareBinding(scopeChain, node.name.text)
-        const functionId = functionOwnerId(currentOwnerId, node.name.text)
+        const functionId = functionOwnerId(currentOwnerId, node.name.text, ts.isSourceFile(node.parent))
         if (node.body) {
           visitFunctionLikeBody(
             node.body,
@@ -2219,7 +2233,7 @@ export function resolveCrossFileRelativeJsImports(
 
       if (ts.isCallExpression(node) && currentOwnerId && ts.isIdentifier(node.expression)) {
         const targetId = importedTargets.get(node.expression.text)
-        if (targetId && !isShadowed(scopeChain, node.expression.text)) {
+        if (targetId && !caseInterfaceIds.has(targetId) && !isShadowed(scopeChain, node.expression.text)) {
           const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
           addUniqueEdge(edges, existingEdges, createEdge(currentOwnerId, targetId, 'calls', filePath, line))
         } else if (externalImportedBindings.has(node.expression.text) && !isShadowed(scopeChain, node.expression.text)) {
@@ -2237,7 +2251,7 @@ export function resolveCrossFileRelativeJsImports(
         const targetId = namespaceImport && !isShadowed(scopeChain, node.expression.expression.text)
           ? resolveImportedTargetId(namespaceImport.targetFilePath, node.expression.name.text)
           : null
-        if (targetId) {
+        if (targetId && !caseInterfaceIds.has(targetId) && !(namespaceImport?.typeOnly && caseTargetIds.has(targetId))) {
           const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1
           addUniqueEdge(edges, existingEdges, createEdge(fileNodeId, targetId, 'imports_from', filePath, namespaceImport?.line ?? line))
           addUniqueEdge(edges, existingEdges, createEdge(currentOwnerId, targetId, 'calls', filePath, line))

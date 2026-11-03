@@ -1,5 +1,3 @@
-import { performance } from 'node:perf_hooks'
-
 import { describe, expect, it, vi } from 'vitest'
 
 import { KnowledgeGraph } from '../../src/contracts/graph.js'
@@ -566,15 +564,18 @@ describe('conceptual-query fallback planner', () => {
     }
     graph.addEdge('hub', 'observer', { relation: 'notifies' })
     const neighborSpy = vi.spyOn(graph, 'incidentNeighbors')
-    const started = performance.now()
 
-    planConceptualFallback(graph, {
+    const proposal = planConceptualFallback(graph, {
       question: 'How is topology kept current when modifications happen?',
       initialQuality: lowQuality(),
       selectedNodes: [],
     })
 
-    expect(performance.now() - started).toBeLessThan(500)
+    // One obligation needs no cross-obligation connectivity searches. Bound
+    // work by one vocabulary read per node, 24 BFS searches of at most 240
+    // visits, and six expansion reads instead of a machine-dependent deadline.
+    expect(proposal.obligationCount).toBe(1)
+    expect(neighborSpy.mock.calls.length).toBeLessThanOrEqual(graph.numberOfNodes() + (24 * 240) + 6)
     expect(neighborSpy).toHaveBeenCalled()
     expect(neighborSpy.mock.calls.every(([, limit]) => limit === 32)).toBe(true)
     expect(neighborSpy.mock.results.every((entry) => (

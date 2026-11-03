@@ -3,19 +3,75 @@ import { resolve } from 'node:path'
 import ts from 'typescript'
 
 import type { ContextPackNode } from '../contracts/context-pack.js'
+import { maskPromptRegions, scanPromptRegions } from '../shared/prompt-regions.js'
 import { sourceFunctionOccurrence } from '../shared/source-function-occurrences.js'
 import type { RetrieveResult } from './retrieve.js'
-import { classifyRetrievalLevel, extractPromptExclusions, retrievalSubjectPrompt } from './retrieval-gate.js'
+import { classifyRetrievalLevel, extractPromptExclusions, retrievalEvidencePrompt, retrievalSubjectPrompt } from './retrieval-gate.js'
 import { sourceSelectionProvenanceKey } from './retrieve/source-dependencies.js'
-import { readEvidenceLines, sourceBodyWords, sourceDeclarationKind, sourceDeclarationQualifiedName, sourceQueryIsLiteralLookup, sourceQueryLiterals } from './retrieve/source-evidence.js'
+import { readEvidenceLines, sourceBodyWords, sourceDeclarationKind, sourceDeclarationQualifiedName, sourcePathForEvidence, sourceQueryIsLiteralLookup, sourceQueryLiterals } from './retrieve/source-evidence.js'
 import { sourceModuleConfigurationSnapshotIsFresh } from './retrieve/source-modules.js'
+import { sourceQuerySymbols } from './retrieve/source-query-symbols.js'
 import { tokenizeQuestion } from './retrieve/pipeline.js'
+import { repositoryEvidenceQuestion } from './retrieve/repository-query.js'
+
+type LiteralSubjectPreference = { literal: string; relationships: ReadonlyArray<{ from_id: string; to_id: string }> }
+
+/** Recognize an authored subject, never infer one from a high lexical score. */
+function frontedLiteralSubject(question: string, nodes: readonly ContextPackNode[]): string | undefined {
+  if (question.length > 16_384) return undefined
+  const positive = retrievalEvidencePrompt(question).trim(), regions = scanPromptRegions(positive)
+  const region = regions[0], literals = sourceQueryLiterals(positive)
+  if (regions.length !== 1 || region?.kind !== 'quoted_string' || literals.length !== 1
+    || positive.slice(region.start + 1, region.end - 1).trim() !== literals[0]) return undefined
+  const prefix = positive.slice(0, region.start), suffix = positive.slice(region.end)
+  if (!/^(?:in|within|for)\s+(?:[A-Za-z][A-Za-z-]*\s+){0,4}$/i.test(prefix)) return undefined
+  const remainder = /^\s*(?:[A-Za-z][A-Za-z-]*\s*){0,2},\s*((?:when|how|what|why|whether)\b[\s\S]*)$/i.exec(suffix)?.[1]
+  if (!remainder || !remainder.endsWith('?')) return undefined
+  if (/\b(?:and|or|versus|vs)\b/i.test(`${prefix} ${suffix.slice(0, suffix.indexOf(','))}`)) return undefined
+  const sentences = remainder.slice(0, -1).split(/\?\s*/)
+  if (sentences.length > 2 || sentences.length === 2
+    && !/^for example,\s+(?:when|how|what|why|whether)\b/i.test(sentences[1]!)) return undefined
+  // Decimal points belong to examples; other sentence/command boundaries are
+  // outside this deliberately small grammar and retain the ordinary policy.
+  if (/[!;\r\n]|(?<!\d)\.|\.(?!\d)/.test(remainder)) return undefined
+  const prose = maskPromptRegions(positive, regions)
+  if (/\b(?:also|then|next|separately|independently|additionally|another|elsewhere|besides|all|every|entire|complete|find|locate|show|inspect|explain|describe|compare|contrast|callers?|callees?|calls|called|dependencies|dependents?|invok\w*|trace|flow|workflow|impact|affected|across|functions?|methods?|symbols?)\b/i.test(prose)) return undefined
+  const signals = classifyRetrievalLevel({ prompt: positive }).signals
+  if (signals.mentioned_paths.length || signals.mentioned_directories?.length || signals.mentioned_symbols.length) return undefined
+  const names = new Set(nodes.map(node => node.label.replace(/\(\)$/, '').split(/[.:]/).at(-1)))
+  if (sourceQuerySymbols(prose).some(occurrence => names.has(occurrence.name.split('.').at(-1))
+    || /[_$#.]|[a-z][A-Z]/.test(occurrence.name) || /^\s*\(/.test(prose.slice(occurrence.end)))) return undefined
+  return literals[0]
+}
+
+/** Discovery-only presentation preference; every deferred owner stays recoverable. */
+export function protectSourceDiscoveryWitnesses(
+  retrieval: RetrieveResult, nodes: readonly ContextPackNode[], retainedIds: ReadonlySet<string>, root: string,
+): Set<string> {
+  const question = repositoryEvidenceQuestion(retrieval, root)
+  const literal = retrieval.selection_scope === 'task_context' && retrieval.task_contract?.task_kind === 'explain'
+    ? frontedLiteralSubject(question, nodes) : undefined
+  const relationships = [...retrieval.relationships, ...(retrieval[sourceSelectionProvenanceKey]?.resolved_pairs ?? [])]
+  const pairs = relationships.length <= 4096 ? relationships.flatMap(pair =>
+    typeof pair.from_id === 'string' && typeof pair.to_id === 'string' ? [{ from_id: pair.from_id, to_id: pair.to_id }] : []) : []
+  const ids = nodes.flatMap(node => node.node_id ? [node.node_id] : [])
+  const preference = literal && ids.length === nodes.length && new Set(ids).size === ids.length && pairs.length === relationships.length
+    ? { literal, relationships: pairs } : undefined
+  return protectedSourceQueryWitnesses(question, nodes, retainedIds, root, new Map(), undefined, preference)
+}
 
 /** Protect visible query witnesses; this can only reduce a proposed deferral. */
 export function protectSourceQueryWitnesses(
   question: string, nodes: readonly ContextPackNode[], retainedIds: ReadonlySet<string>, root: string,
   cache = new Map<string, string[] | null>(),
   sourceFiles?: ReadonlySet<string>,
+): Set<string> {
+  return protectedSourceQueryWitnesses(question, nodes, retainedIds, root, cache, sourceFiles)
+}
+
+function protectedSourceQueryWitnesses(
+  question: string, nodes: readonly ContextPackNode[], retainedIds: ReadonlySet<string>, root: string,
+  cache: Map<string, string[] | null>, sourceFiles?: ReadonlySet<string>, preference?: LiteralSubjectPreference,
 ): Set<string> {
   const protectedIds = new Set(retainedIds)
   const protectAll = (): Set<string> => new Set([...protectedIds, ...nodes.flatMap(node => node.node_id ? [node.node_id] : [])])
@@ -54,6 +110,46 @@ export function protectSourceQueryWitnesses(
     if (!valid || rendered.join('\n') !== node.snippet) protectedIds.add(node.node_id)
     else visibleText.set(node.node_id, visible.join('\n'))
   }
+  if (preference) {
+    const complete = (node: ContextPackNode): boolean => !!node.node_id && visibleText.has(node.node_id)
+      && !node.snippet_truncated && !node.snippet_omitted_ranges?.length && !node.source_expand_handle
+    const core = nodes.filter(node => node.node_id && retainedIds.has(node.node_id) && complete(node)
+      && containsLiteral(visibleText.get(node.node_id)!, preference.literal))
+    const files = new Map(nodes.flatMap(node => {
+      const path = sourcePathForEvidence(node.source_file, root)
+      return node.node_id && path ? [[node.node_id, path] as const] : []
+    }))
+    // An absent, forged or partial literal supplier cannot narrow protection.
+    if (core.length && core.every(node => files.has(node.node_id!))) {
+      const coreFiles = new Set(core.map(node => files.get(node.node_id!)))
+      for (const node of nodes) if (node.node_id && (!complete(node) || !files.has(node.node_id)
+        || coreFiles.has(files.get(node.node_id)) || containsLiteral(visibleText.get(node.node_id) ?? '', preference.literal))) protectedIds.add(node.node_id)
+      const delivered = new Set(nodes.flatMap(node => node.node_id ? [node.node_id] : []))
+      // Connectivity only protects already-delivered source. It does not admit
+      // owners, validate a call edge, or prove that other source is irrelevant.
+      const neighbors = new Map<string, Set<string>>()
+      const connect = (from: string, to: string): void => {
+        const adjacent = neighbors.get(from) ?? new Set<string>(); adjacent.add(to); neighbors.set(from, adjacent)
+        const reverse = neighbors.get(to) ?? new Set<string>(); reverse.add(from); neighbors.set(to, reverse)
+      }
+      for (const pair of preference.relationships) if (delivered.has(pair.from_id) && delivered.has(pair.to_id)) {
+        connect(pair.from_id, pair.to_id)
+      }
+      // An imported helper can have local constants whose reference edge is
+      // absent. Preserve companions in every connected canonical source file.
+      const representative = new Map<string, string>()
+      for (const [id, file] of files) {
+        const first = representative.get(file)
+        if (first) connect(first, id)
+        else representative.set(file, id)
+      }
+      const queue = [...protectedIds]
+      for (const id of queue) for (const neighbor of neighbors.get(id) ?? []) if (!protectedIds.has(neighbor)) {
+        protectedIds.add(neighbor); queue.push(neighbor)
+      }
+      return protectedIds
+    }
+  }
   // Only permanently retained authenticated text can justify a deferral.
   // Two proposed deferrals must never justify removing each other's witness.
   const retainedWords = new Set<string>(), retainedLiterals = new Set<string>()
@@ -74,7 +170,7 @@ export function protectSourceQueryWitnesses(
 export function scopedSourceDeferralCore(
   retrieval: RetrieveResult, nodes: readonly ContextPackNode[], root: string,
 ): { question: string; node_ids: string[]; selected_node_ids: string[] } | undefined {
-  const question = retrieval.question, provenance = retrieval[sourceSelectionProvenanceKey]
+  const question = repositoryEvidenceQuestion(retrieval, root), provenance = retrieval[sourceSelectionProvenanceKey]
   if (retrieval.selection_scope !== 'task_context' || retrieval.task_contract?.task_kind !== 'explain'
     || !provenance || question.length > 16_384 || !nodes.length || nodes.length > 128
     || /['"`\u2018\u2019\u201c\u201d]/.test(question)

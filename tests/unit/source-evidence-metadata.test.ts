@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
-import { compactRepeatedSourceMetadata, expandSourceDependencyCalls, MIN_SOURCE_EVIDENCE_BUDGET,
+import { compactContainedSourceReferences, compactRepeatedSourceMetadata, expandSourceDependencyCalls, MIN_SOURCE_EVIDENCE_BUDGET,
   resolveSourceSnippet, SOURCE_EVIDENCE_RESPONSE_FORMAT } from '../../src/runtime/source-evidence-response.js'
 
 type Value = Record<string, unknown>
@@ -17,6 +17,69 @@ function withReceipt(payload: Value, budget: number): Value {
 }
 
 describe('lossless source evidence metadata compaction', () => {
+  it('shares only a complete visible child of a partial supplier without changing owner evidence', () => {
+    const childLines = [
+      '  summarize(value: string) {',
+      '    const normalized = value.trim();',
+      '    const label = "shipment handling and dispatch record";',
+      '    const first = `${label}:${normalized}`;',
+      '    const second = first.toUpperCase();',
+      '    const third = second.replaceAll(" ", "-");',
+      '    const fourth = third.slice(0, 96);',
+      '    if (fourth.length === 0) return "empty shipment record";',
+      '    return fourth;',
+      '  }',
+    ]
+    const child = childLines.join('\n')
+    const input = withReceipt({ task: 'explain', response_format: SOURCE_EVIDENCE_RESPONSE_FORMAT,
+      pack: { selection_scope: 'task_context', matched_nodes: [
+        { node_id: 'class', label: 'Shipment', source_file: 'src/shipment.ts', snippet_scope: 'symbol',
+          snippet_line_range: { start_line: 1, end_line: 30 },
+          snippet_omitted_ranges: [{ start_line: 2, end_line: 9 }, { start_line: 20, end_line: 29 }],
+          snippet: `export class Shipment {\n[omitted lines 2-9]\n${child}\n[omitted lines 20-29]\n}`,
+          source_expand_handle: 'source-expand:unchanged-class', future_owner: { retained: true } },
+        { node_id: 'method', label: '.summarize()', source_file: 'src/shipment.ts', snippet_scope: 'symbol',
+          snippet_line_range: { start_line: 10, end_line: 19 }, snippet: child, future_child: ['preserve'] },
+      ], relationships: [{ from_id: 'class', to_id: 'method', relation: 'method' }] },
+      expandable: [{ handle_id: 'expand:unchanged-scope', count: 2 }],
+      evidence: { answerability: { state: 'insufficient', answer_scope: 'partial', advisory: true } },
+      future_response: { retained: true },
+    }, 3000)
+    const before = JSON.stringify(input), original = object(input.pack).matched_nodes as Value[]
+    const output = compactContainedSourceReferences(input, 3000)
+    const nodes = object(output.pack).matched_nodes as Value[]
+    expect(nodes[1]!.snippet_ref).toBe('class')
+    expect(nodes.map(node => resolveSourceSnippet(node, nodes))).toEqual(original.map(node => resolveSourceSnippet(node, original)))
+    const restored = structuredClone(output), restoredNodes = object(restored.pack).matched_nodes as Value[]
+    restoredNodes[1]!.snippet = child
+    delete restoredNodes[1]!.snippet_ref
+    restored.serialized_budget = input.serialized_budget
+    expect(restored).toEqual(input) // Includes all unknown metadata, omission maps, handles and relationships.
+    expect(object(output.serialized_budget).token_count).toBe(estimateQueryTokens(JSON.stringify(output)))
+    expect(estimateQueryTokens(JSON.stringify(output))).toBeLessThan(estimateQueryTokens(before))
+    expect(compactContainedSourceReferences(output, 3000)).toEqual(output)
+    expect(JSON.stringify(input)).toBe(before)
+
+    const negatives = ['marker', 'gap', 'unknown truncation', 'derived', 'different file'].map(kind => {
+      const changed = structuredClone(input), entries = object(changed.pack).matched_nodes as Value[]
+      const supplier = entries[0]!
+      if (kind === 'marker') supplier.snippet = String(supplier.snippet).replace('[omitted lines 2-9]', '[omitted lines 2-8]')
+      if (kind === 'gap') {
+        supplier.snippet = String(supplier.snippet).replace(childLines[5]!, '[omitted lines 15-15]')
+        supplier.snippet_omitted_ranges = [{ start_line: 2, end_line: 9 }, { start_line: 15, end_line: 15 }, { start_line: 20, end_line: 29 }]
+      }
+      if (kind === 'unknown truncation') { delete supplier.snippet_omitted_ranges; supplier.snippet_truncated = true }
+      if (kind === 'derived') supplier.snippet_source = 'derived'
+      if (kind === 'different file') entries[1]!.source_file = 'src/other.ts'
+      withReceipt(changed, 3000)
+      const reference: Value = { ...entries[1]!, snippet_ref: 'class' }
+      delete reference.snippet
+      return { unchanged: compactContainedSourceReferences(changed, 3000) === changed,
+        projected: resolveSourceSnippet(reference, [supplier, reference]) }
+    })
+    expect(negatives).toEqual(Array.from({ length: 5 }, () => ({ unchanged: true, projected: null })))
+  })
+
   it('round-trips ordered diagnostic duplicates and unknown fields while preserving source, handles and unequal identities', () => {
     const repeated = 'external.library.repeatedDiagnostic'
     const calls = [

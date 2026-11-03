@@ -1,8 +1,10 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { DiscoveryProgress } from '../../src/runtime/discovery-progress.js'
+import { exactSourcePromptTargets } from '../../src/runtime/exact-source-prompt.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { estimateQueryTokens } from '../../src/runtime/serve.js'
 import { resolveSourceSnippet } from '../../src/runtime/source-evidence-response.js'
@@ -64,7 +66,7 @@ function fixture(files: Record<string, string>) {
     return payload
   }
   const call = async (name: string, args: RecordValue) => parse(await response(name, args), Number(args.budget))
-  return { root, state, response, parse, call }
+  return { root, graphPath, state, response, parse, call }
 }
 
 function request(targets: Target[], budget = 4000): RecordValue {
@@ -332,6 +334,72 @@ describe('strict context_pack explicit file and symbol targets', () => {
     await refuse(request([good, util]), /missing|unreadable|source|file|owner|fresh|stale|changed/i)
   })
 
+  it('delivers complete small owners plus a first page and publishes only its nonrepeating cursor', async () => {
+    vi.stubEnv('MADAR_EXPERIMENTAL_EXACT_SOURCE_ONLY', '1')
+    const large = ['export function large(input: number) {',
+      ...Array.from({ length: 1000 }, (_, index) => `  input = (input + ${index}) % 65521;`),
+      '  return input;', '}'].join('\n')
+    const small = 'export function small() {\n  return 1;\n}'
+    const other = 'export function other() {\n  return 2;\n}'
+    const f = fixture({ 'large.ts': large, 'small.ts': small, 'other.ts': other })
+    const largeTarget = { file: 'large.ts', symbol: 'large' }
+    const smallTargets = [{ file: 'small.ts', symbol: 'small' }, { file: 'other.ts', symbol: 'other' }]
+    for (const targets of [[largeTarget, ...smallTargets], [...smallTargets, largeTarget]]) {
+      const beforeHandles = new Set(f.state.contextPackHandles!.keys())
+      const payload = await f.call('context_pack', request(targets, 1000))
+      assertPartial(payload)
+      expect(payload.pack.matched_nodes.find(node => node.label === 'small()')?.snippet).toBe(small)
+      expect(payload.pack.matched_nodes.find(node => node.label === 'other()')?.snippet).toBe(other)
+      const first = payload.pack.matched_nodes.find(node => node.label === 'large()')!
+      expect(first?.source_expand_handle, JSON.stringify(payload)).toBeTruthy()
+      expect(payload.expandable ?? []).toEqual([])
+      const published = payload.pack.matched_nodes.flatMap(node => node.source_expand_handle ? [node.source_expand_handle] : [])
+      expect([...f.state.contextPackHandles!.keys()].filter(id => !beforeHandles.has(id)).every(id => published.includes(id))).toBe(true)
+      const visible = (node: SourceNode): number[] => Array.from({ length: node.snippet_line_range.end_line - node.snippet_line_range.start_line + 1 },
+        (_, index) => index + node.snippet_line_range.start_line).filter(line => !(node.snippet_omitted_ranges ?? []).some(gap => line >= gap.start_line && line <= gap.end_line))
+      const firstLines = new Set(visible(first))
+      expect(firstLines.size).toBeGreaterThan(0)
+      const page = await f.call('context_expand', { handle_id: first.source_expand_handle!, budget: 1000 })
+      assertPartial(page)
+      expect(page.pack.matched_nodes[0]?.label).toBe('large()')
+      expect(page.pack.matched_nodes[0]?.source_expand_handle).toBeTruthy()
+      expect(visible(page.pack.matched_nodes[0]!).some(line => firstLines.has(line))).toBe(false)
+    }
+  })
+
+  it('retains small source and generic recovery when the first whole line cannot fit', async () => {
+    const large = `export function large() { const payload = "${'a'.repeat(12000)}";\n  return payload;\n}`
+    const small = 'export function small() {\n  return 1;\n}'
+    const other = 'export function other() {\n  return 2;\n}'
+    const f = fixture({ 'large.ts': large, 'small.ts': small, 'other.ts': other })
+    const payload = await f.call('context_pack', request([
+      { file: 'large.ts', symbol: 'large' }, { file: 'small.ts', symbol: 'small' }, { file: 'other.ts', symbol: 'other' },
+    ], 1000))
+    expect(payload.pack.matched_nodes.map(node => node.label).sort()).toEqual(['other()', 'small()'])
+    expect(payload.expandable?.[0]?.symbols).toEqual(['large'])
+    expect([...f.state.contextPackHandles!.keys()]).toEqual([payload.expandable![0]!.handle_id])
+  })
+
+  it('does not repair an invalid navigation-only serializer receipt when filling source', () => {
+    const root = temporaryRoot()
+    const owners = ['first', 'second'].map(name => {
+      const snippet = `export function ${name}() { return 1; }`, sourceFile = `${name}.ts`
+      writeFileSync(join(root, sourceFile), snippet)
+      return { nodeId: name, label: `${name}()`, sourceFile, range: { start: 1, end: 1 }, snippet, validate: () => {} }
+    })
+    expect(() => buildExplicitSourceTargetPayload({ prompt: 'Read exact functions.', task: 'explain', budget: 1000,
+      owners, rootPath: root, governance: { graph_freshness: { status: 'fresh', selected_context_status: 'fresh' } },
+      finalize(input, budget, options) {
+        const pack = (input as RecordValue).pack as RecordValue
+        const payload = finalizeSourceEvidenceResponse({ ...input, pack: { ...pack, matched_nodes: [] } }, budget, options)
+        if ((payload.expandable as unknown[] | undefined)?.length) {
+          (payload.serialized_budget as RecordValue).token_count = -1
+        }
+        return payload
+      },
+    })).toThrow(/serialized budget/)
+  })
+
   it('delivers the first bounded page of one oversized explicit owner without a navigation-only turn', async () => {
     const owner: Owner = { file: 'src/records.ts', symbol: 'processRecords',
       lines: ['export function processRecords(value: number) {',
@@ -528,4 +596,96 @@ describe('strict context_pack explicit file and symbol targets', () => {
     expect(stale?.result).toBeUndefined()
     expect([...f.state.contextPackHandles!]).toEqual(handlesBefore)
   })
+})
+
+// Older version-native indexes can store display labels without class qualification.
+it('uses verified declaration names for explicit methods with legacy display labels', async () => {
+  const f = fixture({ 'worker.ts': 'export class Worker {\n  send() { return "sent"; }\n  private decode() { return "decoded"; }\n}\nexport class Other {\n  send() { return "other"; }\n}\n' })
+  const graph = JSON.parse(readFileSync(f.graphPath, 'utf8'))
+  for (const node of graph.nodes) {
+    if (typeof node.label === 'string' && /send\(\)$/.test(node.label)) node.label = '.send()'
+    if (typeof node.label === 'string' && /decode\(\)$/.test(node.label)) node.label = '.decode()'
+  }
+  writeFileSync(f.graphPath, JSON.stringify(graph))
+  const payload = await f.call('context_pack', request([
+    { file: 'worker.ts', symbol: 'Worker.send' }, { file: 'worker.ts', symbol: 'Worker.decode' },
+  ]))
+  expect(payload.pack.matched_nodes.map(node => node.label)).toEqual(['Worker.send()', 'Worker.decode()'])
+  expect(JSON.stringify(payload)).toContain('decoded')
+  expect(JSON.stringify(payload)).not.toContain('return \"other\"')
+  assertPartial(payload)
+  const ambiguous = await f.response('context_pack', request([{ file: 'worker.ts', symbol: 'send' }]))
+  expect(ambiguous?.error?.message).toMatch(/ambiguous/)
+})
+
+it('routes an explicit file/function prose instruction through exact lookup', async () => {
+  const f = fixture({ 'worker.ts': 'export class Worker {\n  send() { return "sent"; }\n}\nexport function extractProfileContext() { return "context"; }\n' })
+  const payload = await f.call('context_pack', {
+    prompt: 'Exact source function .send() in worker.ts and extractProfileContext definition. Show arguments passed to upstream call.', budget: 3000,
+  })
+  expect(payload.pack.matched_nodes.map(node => node.label)).toEqual(['Worker.send()', 'extractProfileContext()'])
+  assertPartial(payload)
+})
+
+it('keeps broad, quoted, fenced, multi-file and additional-owner requests out of exact prose routing', () => {
+  expect(exactSourcePromptTargets('Exact source function .send() in worker.ts.')).toEqual([{ file: 'worker.ts', symbol: 'send' }])
+  for (const prompt of [
+    'Explain send() in worker.ts.',
+    'Exact source function .send() in worker.ts.backup.',
+    '"Exact source function .send() in worker.ts."',
+    'Exact source function .send() in worker.ts. Show decodeContext().',
+    'Exact source function .send() in worker.ts and other.ts.',
+    'Exact source function .send() in worker.ts. Read other.ts too.',
+    'Exact source function .send() in worker.ts.\n```\nmore()\n```',
+  ]) expect(exactSourcePromptTargets(prompt), prompt).toBeUndefined()
+})
+
+it('stops repeated discovery for unchanged files while keeping exact lookup and continuations available', async () => {
+  const source = ['export function work() {', ...Array.from({ length: 90 }, (_, i) => `  const v${i} = ${i};`), '  return v0;', '}'].join('\n')
+  const f = fixture({ 'worker.ts': source, 'other.ts': 'export function other() { return 1; }' })
+  const progress = new DiscoveryProgress()
+  Object.assign(f.state, { discoveryProgress: progress })
+  const published = { result: { content: [{ type: 'text', text: JSON.stringify({ pack: { matched_nodes: [{
+    source_file: 'worker.ts', snippet: source, snippet_line_range: { start_line: 1, end_line: 93 },
+  }] } }) }] } }
+  for (let i = 0; i < 3; i++) progress.observe(published, f.root, true)
+  const stopped = await f.response('context_pack', { prompt: 'Explain worker.ts', task: 'explain', budget: 128 })
+  expect(stopped?.error?.message).toMatch(/Repeated discovery.*explicit targets.*native/)
+  expect(estimateQueryTokens(JSON.stringify(stopped?.error))).toBeLessThanOrEqual(128)
+  const exact = await f.call('context_pack', request([{ file: 'worker.ts', symbol: 'work' }], 900))
+  assertPartial(exact)
+  const cursor = exact.pack.matched_nodes.find(node => node.source_expand_handle)?.source_expand_handle
+  expect(cursor).toBeTruthy()
+  const continuation = await f.response('context_expand', { handle_id: cursor, budget: 1500 })
+  expect(continuation?.error).toBeUndefined()
+  expect((await f.response('context_pack', { prompt: 'Exact source function work in worker.ts.', budget: 1000 }))?.error).toBeUndefined()
+  expect((await f.response('context_pack', { prompt: 'Explain other.ts', task: 'explain', budget: 1000 }))?.error).toBeUndefined()
+  vi.stubEnv('MADAR_TOOL_PROFILE', 'full')
+  const custom = await f.response('context_pack', { prompt: 'Explain worker.ts', task: 'explain', budget: 1000, require_fresh_graph: false })
+  expect(custom?.error).toBeUndefined()
+  expect(new DiscoveryProgress().shouldStop('Explain worker.ts', f.root)).toBe(false)
+  writeFileSync(join(f.root, 'worker.ts'), source.replace('v0 = 0', 'v0 = 1'))
+  expect(progress.shouldStop('Explain worker.ts', f.root)).toBe(false)
+})
+
+it('does not derive stopping authority from fabricated snippets or forgotten history', () => {
+  const root = temporaryRoot(), progress = new DiscoveryProgress()
+  const lines = Array.from({ length: 20 }, (_, i) => `export const v${i} = ${i};`).join('\n')
+  const published = (file: string, snippet: string) => ({ result: { content: [{ type: 'text', text: JSON.stringify({
+    pack: { matched_nodes: [{ source_file: file, snippet, snippet_line_range: { start_line: 1, end_line: 20 } }] },
+  }) }] } })
+  writeFileSync(join(root, 'one.ts'), lines)
+  for (let i = 0; i < 3; i++) progress.observe(published('one.ts', lines.replace('v0', 'wrong')), root, true)
+  expect(progress.shouldStop('Explain one.ts', root)).toBe(false)
+  for (let i = 0; i < 3; i++) progress.observe(published('one.ts', lines), root, true)
+  expect(progress.shouldStop('Explain one.ts', root)).toBe(true)
+  expect(progress.shouldStop('Explain one.ts and other.ts', root)).toBe(false)
+  writeFileSync(join(root, '.madarignore'), 'one.ts\n')
+  expect(progress.shouldStop('Explain one.ts', root)).toBe(false)
+  for (let i = 0; i < 33; i++) {
+    const file = `f${i}.ts`
+    writeFileSync(join(root, file), lines)
+    progress.observe(published(file, lines), root, true)
+  }
+  expect(progress.shouldStop('Explain f0.ts', root)).toBe(false)
 })

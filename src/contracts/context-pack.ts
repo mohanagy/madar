@@ -452,8 +452,15 @@ export interface ContextPackCoverage {
 
 export type SourceSelectionScope = 'symbol_lookup' | 'file_lookup' | 'task_context'
 
+/** Admission context only; budgeting may omit these definitions. Never call authority. */
+export interface SourceLexicalDefinitionContext {
+  admitted_node_ids: string[]
+  runtime_dispatch: 'unresolved'
+}
+
 /** Bounded source resolution is evidence of inspected calls, not workflow completeness. */
 export interface ContextPackSourceDependencies {
+  lexical_definition_context?: SourceLexicalDefinitionContext
   scanned_files: number
   resolved_calls: number
   /** Statically bound function values passed as arguments; not proof of invocation. */

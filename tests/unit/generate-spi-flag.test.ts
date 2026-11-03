@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, test } from 'vitest'
 import { parseGenerateArgs } from '../../src/cli/parser.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { buildGenerationPolicy } from '../../src/infrastructure/generation-policy.js'
-import { EXTRACTOR_CACHE_VERSION } from '../../src/pipeline/extract.js'
+import { EXTRACTOR_CACHE_VERSION, extractJs } from '../../src/pipeline/extract.js'
 import { buildSpiCached } from '../../src/pipeline/spi/cache.js'
 
 function mkSandbox(prefix: string): string {
@@ -56,7 +56,7 @@ describe('generateGraph capability-aware auto extraction', () => {
   beforeEach(() => { sandbox = mkSandbox('generate-auto-') })
   afterEach(() => { rmSync(sandbox, { recursive: true, force: true }) })
 
-  it('enables case-distinct allocation only for explicit SPI generation', () => {
+  it('allocates case-distinct top-level functions in every extraction mode', () => {
     writeFile(sandbox, 'case.ts', [
       'export function Beacon() { return 1 }',
       'export function beacon() { return 2 }',
@@ -71,13 +71,91 @@ describe('generateGraph capability-aware auto extraction', () => {
       expect(graph.extractor_version).toBe(EXTRACTOR_CACHE_VERSION)
       expect(graph.nodes.find(node => node.label === 'Singleton()')?.id).toBe('case_singleton')
       const owners = graph.nodes.filter(node => node.label === 'Beacon()' || node.label === 'beacon()')
-      expect(owners).toHaveLength(extractionMode === 'spi' ? 2 : 1)
-      if (extractionMode === 'spi') {
-        expect(owners.every(node => node.id.startsWith('case_beacon__case_'))).toBe(true)
-        expect(graph.nodes.some(node => node.id === 'case_beacon')).toBe(false)
-      } else {
-        expect(owners[0]?.id).toBe('case_beacon')
-        expect(graph.nodes.some(node => node.id.includes('__case_'))).toBe(false)
+      expect(owners).toHaveLength(2)
+      expect(owners.every(node => node.id.startsWith('case_beacon__case_'))).toBe(true)
+      expect(graph.nodes.some(node => node.id === 'case_beacon')).toBe(false)
+    }
+  })
+
+  it('preserves case-distinct type and callable owners across local, imported and Express bindings', () => {
+    const declarations = [
+      'export interface RewriteAllowance { free: boolean }',
+      'export function rewriteAllowance() { function child() { return finish() } return { free: Beacon() > 0 && child() > 0 } }',
+      'export function Beacon() { return beacon() }',
+      'export function beacon() { return 1 }',
+    ]
+    writeFile(sandbox, 'support.ts', 'export function finish() { return 1 }\n')
+    writeFile(sandbox, 'consumer.ts', [
+      "import express from 'express'",
+      "import { rewriteAllowance as calculate } from './pair'",
+      "import type { rewriteAllowance as typeOnly } from './pair'",
+      'export function consume() { return calculate() }',
+      'export function invalidTypeUse() { return typeOnly() }',
+      'const app = express()', "app.get('/imported', calculate)",
+      "export function installImported(calculate: unknown) { app.get('/shadow-import', calculate) }",
+    ].join('\n'))
+    writeFile(sandbox, 'optout.ts', [
+      'export interface Same { value: number }', 'export function Same() { return 1 }',
+      'export interface Foo_bar {}', 'export function foo_BAR() { return 1 }',
+      'export class Foo { bar() { return 2 } }',
+    ].join('\n'))
+    let identities: Record<string, string> | undefined
+    for (const reverse of [false, true]) {
+      writeFile(sandbox, 'pair.ts', [
+        "import express from 'express'", "import { finish } from './support'",
+        ...(reverse ? [...declarations].reverse() : declarations),
+        'export interface Extended extends RewriteAllowance {}',
+        'export function shadow(rewriteAllowance: () => unknown) { return rewriteAllowance() }',
+        'export function member(obj: { rewriteAllowance(value: number): unknown }) { return obj.rewriteAllowance(Beacon()) }',
+        'const router = express.Router()', "router.get('/local', rewriteAllowance)",
+        "export function install(rewriteAllowance: unknown) { router.get('/shadow', rewriteAllowance) }",
+      ].join('\n'))
+      const raw = extractJs(join(sandbox, 'pair.ts'))
+      for (const extractionMode of ['auto', 'legacy'] as const) {
+        const result = generateGraph(sandbox, { noHtml: true, includeDocs: false, extractionMode })
+        const graph = JSON.parse(readFileSync(result.graphPath, 'utf8')) as {
+          nodes: Array<{ id: string; label: string; snippet?: string; source_location?: string }>
+          links: Array<{ source: string; target: string; relation: string }>
+        }
+        const owner = (label: string) => {
+          const found = graph.nodes.filter(node => node.label === label)
+          expect(found, `${extractionMode}:${label}`).toHaveLength(1)
+          return found[0]!
+        }
+        const type = owner('RewriteAllowance'), callable = owner('rewriteAllowance()')
+        const upper = owner('Beacon()'), lower = owner('beacon()')
+        const ids = Object.fromEntries([type, callable, upper, lower].map(node => [node.label, node.id]))
+        if (identities) expect(ids).toEqual(identities)
+        else identities = ids
+        expect(new Set(Object.values(ids)).size).toBe(4)
+        expect(type.snippet).toContain('interface RewriteAllowance')
+        expect(callable.snippet).toContain('return { free: Beacon()')
+        expect(graph.nodes.some(node => ['pair_rewriteallowance', 'pair_beacon'].includes(node.id))).toBe(false)
+        const has = (source: string, target: string, relation = 'calls') => graph.links.some(edge =>
+          edge.source === source && edge.target === target && edge.relation === relation)
+        expect(has(upper.id, lower.id)).toBe(true)
+        expect(has(callable.id, upper.id)).toBe(true)
+        expect(has(owner('consume()').id, callable.id)).toBe(true)
+        expect(graph.links.some(edge => edge.relation === 'calls' && edge.target === type.id)).toBe(false)
+        expect(has(owner('invalidTypeUse()').id, callable.id)).toBe(false)
+        expect(has(owner('shadow()').id, callable.id)).toBe(false)
+        expect(has(owner('member()').id, callable.id)).toBe(false)
+        expect(has(owner('member()').id, upper.id)).toBe(true)
+        const child = owner('child()')
+        expect(child.id).toBe('pair_rewriteallowance_child')
+        expect(raw.edges.some(edge => edge.source === callable.id && edge.target === child.id && edge.relation === 'contains')).toBe(true)
+        expect(has(callable.id, child.id)).toBe(true)
+        expect(has(child.id, owner('finish()').id)).toBe(true)
+        expect(has(owner('Extended').id, type.id, 'inherits')).toBe(true)
+        for (const route of ['/local', '/imported']) {
+          const targets = graph.links.filter(edge => edge.relation === 'depends_on' && edge.target === callable.id)
+          expect(targets.some(edge => graph.nodes.find(node => node.id === edge.source)?.label.includes(route))).toBe(true)
+        }
+        expect(graph.links.some(edge => edge.relation === 'depends_on' && edge.target === callable.id
+          && graph.nodes.find(node => node.id === edge.source)?.label.includes('/shadow'))).toBe(false)
+        expect(graph.nodes.filter(node => node.id === 'optout_same')).toHaveLength(1)
+        expect(graph.nodes.filter(node => node.id === 'optout_foo_bar')).toHaveLength(1)
+        expect(graph.nodes.some(node => node.id.startsWith('optout_') && node.id.includes('__case_'))).toBe(false)
       }
     }
   })

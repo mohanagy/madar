@@ -1,6 +1,8 @@
 import type {
   ContextPackCoverage,
+  ContextPackEvidenceClass,
   ContextPackExpandableRef,
+  ContextPackExpandableSourceRange,
   ContextPackExecutionPhase,
   ContextPackExecutionSlice,
   ContextPackRuntimeGenerationAnswerContract,
@@ -8,6 +10,7 @@ import type {
 import type {
   ContextPackRecoveryPlan,
   MadarAnswerabilityAssessment,
+  MadarAnswerabilityState,
   MadarCoverageAssessment,
   MadarEvidenceStrengthAssessment,
   MadarEvidenceStrengthLevel,
@@ -65,6 +68,30 @@ export interface MadarResponseEvidence {
     reasons: Partial<Record<IndexingReasonCode, number>>
     relevant_reasons: Partial<Record<IndexingReasonCode, number>>
   }
+}
+
+/** Private navigation scope; its shape is compatible with legacy target data. */
+export interface MadarRecoveryCandidate {
+  handle_id?: string
+  evidence_class?: ContextPackEvidenceClass
+  focus_files: string[]
+  focus_ranges: ContextPackExpandableSourceRange[]
+  reason: string
+}
+
+export interface ContextPackNavigationPlan {
+  state: MadarAnswerabilityState
+  candidate: MadarRecoveryCandidate | null
+}
+
+export interface MadarRecoveryAssessment {
+  state: MadarAnswerabilityState
+  candidates: MadarRecoveryCandidate[]
+  missingObligations: string[]
+  strength: MadarEvidenceStrengthLevel
+  selectedRelationships: number
+  readinessRank: number
+  strengthRank: number
 }
 
 const HIGH_CONFIDENCE_THRESHOLD = 0.85
@@ -235,11 +262,11 @@ function addMissingObligations(
   }
 }
 
-function verificationTargets(
+function recoveryCandidates(
   expandable: readonly ContextPackExpandableRef[],
   coveredWorkflowOwners: readonly string[],
   missingObligations: readonly string[],
-): MadarVerificationTarget[] {
+): MadarRecoveryCandidate[] {
   const missingEvidence = new Set(
     missingObligations
       .filter((obligation) => obligation.startsWith('evidence:'))
@@ -252,7 +279,7 @@ function verificationTargets(
     Number(missingEvidence.has(right.evidence_class)) - Number(missingEvidence.has(left.evidence_class))
     || left.handle_id.localeCompare(right.handle_id)
   ))
-  const targets = ordered.slice(0, 4).map((entry): MadarVerificationTarget => ({
+  const targets = ordered.slice(0, 4).map((entry): MadarRecoveryCandidate => ({
     handle_id: entry.handle_id,
     evidence_class: entry.evidence_class,
     focus_files: [...new Set(entry.follow_up.focus_files)].slice(0, 5),
@@ -332,6 +359,36 @@ function answerabilityAssessment(input: {
     missing_obligations: input.coverage.missing_obligations,
     verification_targets: [],
     broad_search_fallback: input.sourceVerificationBlocked ? 'blocked' : 'allowed',
+  }
+}
+
+/** Sibling of public guidance: preserve legacy planning semantics from raw facts. */
+function recoveryAssessment(input: {
+  strength: MadarEvidenceStrengthAssessment
+  coverage: MadarCoverageAssessment
+  answerContained: boolean | undefined
+  candidates: readonly MadarRecoveryCandidate[]
+  sourceReliabilityFailed: boolean
+}): MadarRecoveryAssessment {
+  const complete = input.coverage.status === 'complete'
+    && input.coverage.missing_obligations.length === 0
+    && input.answerContained !== false
+  const state: MadarAnswerabilityState = input.sourceReliabilityFailed ? 'insufficient'
+    : complete && input.strength.level === 'strong' ? 'ready'
+      : complete && input.strength.level === 'moderate' ? 'ready_with_caveat'
+        : input.candidates.length > 0 ? 'verify_targets' : 'insufficient'
+  return {
+    state,
+    candidates: state === 'verify_targets' ? input.candidates.map(candidate => ({
+      ...candidate,
+      focus_files: [...candidate.focus_files],
+      focus_ranges: candidate.focus_ranges.map(range => ({ ...range })),
+    })) : [],
+    missingObligations: [...input.coverage.missing_obligations],
+    strength: input.strength.level,
+    selectedRelationships: input.strength.selected_relationships,
+    readinessRank: { ready: 4, ready_with_caveat: 3, verify_targets: 2, insufficient: 1 }[state],
+    strengthRank: { strong: 3, moderate: 2, weak: 1 }[input.strength.level],
   }
 }
 
@@ -542,7 +599,7 @@ function answerContainednessAssessment(
   }
 }
 
-export function assessMadarResponseEvidence(input: {
+export interface MadarResponseEvidenceInput {
   evidencePlan?: RetrievalEvidencePlan | undefined
   answerContract?: ContextPackRuntimeGenerationAnswerContract | undefined
   coverage?: ContextPackCoverage | undefined
@@ -558,7 +615,12 @@ export function assessMadarResponseEvidence(input: {
   question?: string | undefined
   recovery?: ContextPackRecoveryPlan | undefined
   score?: number | undefined
-}): MadarResponseEvidenceAssessment {
+}
+
+function assessEvidenceWithPlanning(input: MadarResponseEvidenceInput): {
+  evidence: MadarResponseEvidenceAssessment
+  planning: MadarRecoveryAssessment
+} {
   const evidencePlan = input.evidencePlan ?? buildRetrievalEvidencePlan({
     ...(input.coverage ? { coverage: input.coverage } : {}),
     ...(input.expandable ? { expandable: input.expandable } : {}),
@@ -782,22 +844,29 @@ export function assessMadarResponseEvidence(input: {
 
   const effectiveScore = roundScore(Math.min(baseScore, confidenceCapForScore(confidenceCap)))
   coverageDetail = { ...coverageDetail, status: coverage }
-  const targets = verificationTargets(
+  const candidates = recoveryCandidates(
     evidencePlan.expandable,
     coveredWorkflowOwners,
     coverageDetail.missing_obligations,
   )
+  const planning = recoveryAssessment({
+    strength: evidenceStrength,
+    coverage: coverageDetail,
+    answerContained,
+    candidates,
+    sourceReliabilityFailed,
+  })
   const answerability = answerabilityAssessment({
     strength: evidenceStrength,
     coverage: coverageDetail,
     answerContained,
-    verificationTargets: targets,
+    verificationTargets: candidates,
     sourceReliabilityFailed,
     sourceVerificationBlocked,
   })
   const packConfidence = compatibilityConfidence(answerability, evidenceStrength, sourceReliabilityFailed)
 
-  return {
+  const evidence: MadarResponseEvidenceAssessment = {
     score: effectiveScore,
     pack_confidence: packConfidence,
     evidence_strength: evidenceStrength,
@@ -832,27 +901,29 @@ export function assessMadarResponseEvidence(input: {
         }
       : {}),
   }
+  return { evidence, planning }
 }
 
-export function buildMadarResponseEvidence(input: {
-  evidencePlan?: RetrievalEvidencePlan | undefined
-  answerContract?: ContextPackRuntimeGenerationAnswerContract | undefined
-  coverage?: ContextPackCoverage | undefined
-  missingPhases?: readonly ContextPackExecutionPhase[] | undefined
-  coveredWorkflowOwners?: readonly string[] | undefined
-  discoverySafety?: DiscoverySafetyMetadata | null | undefined
-  expandable?: readonly ContextPackExpandableRef[] | undefined
-  executionSlice?: ContextPackExecutionSlice | undefined
-  graphPath?: string | undefined
-  indexingManifest?: IndexingManifestV1 | null | undefined
-  impactTraversal?: ImpactTraversal | undefined
-  impactTraversalSummary?: PrImpactResult['impact_traversal'] | undefined
-  question?: string | undefined
-  recovery?: ContextPackRecoveryPlan | undefined
-  score?: number | undefined
-}): MadarResponseEvidence {
+export function assessMadarResponseEvidence(input: MadarResponseEvidenceInput): MadarResponseEvidenceAssessment {
+  return assessEvidenceWithPlanning(input).evidence
+}
+
+export function assessMadarRecoveryEvidence(input: MadarResponseEvidenceInput): MadarRecoveryAssessment {
+  return assessEvidenceWithPlanning(input).planning
+}
+
+export function buildMadarResponseEvidence(input: MadarResponseEvidenceInput): MadarResponseEvidence {
   const { score: _score, ...evidence } = assessMadarResponseEvidence(input)
   return evidence
+}
+
+export function buildMadarResponseEvidenceWithPlanning(input: MadarResponseEvidenceInput): {
+  evidence: MadarResponseEvidence
+  navigation: ContextPackNavigationPlan
+} {
+  const assessed = assessEvidenceWithPlanning(input)
+  const { score: _score, ...evidence } = assessed.evidence
+  return { evidence, navigation: { state: assessed.planning.state, candidate: assessed.planning.candidates[0] ?? null } }
 }
 
 export function collectWorkflowOwners(...groups: Array<readonly (string | null | undefined)[]>): string[] {

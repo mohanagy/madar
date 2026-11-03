@@ -5,13 +5,13 @@ import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import type { ContextPackCoverage } from '../../src/contracts/context-pack.js'
-import { buildMadarResponseEvidence } from '../../src/runtime/mcp-response-evidence.js'
+import { assessMadarRecoveryEvidence, buildMadarResponseEvidence, buildMadarResponseEvidenceWithPlanning } from '../../src/runtime/mcp-response-evidence.js'
 import { createIndexingManifest } from '../../src/pipeline/indexing-outcomes.js'
 import { buildDiscoverySafetyMetadata, relevantDiscoveryExclusions } from '../../src/shared/discovery-safety.js'
 
 describe('mcp-response-evidence', () => {
   it('separates useful partial evidence from answerability instead of returning an abandonment signal', () => {
-    const evidence = buildMadarResponseEvidence({
+    const input: Parameters<typeof buildMadarResponseEvidence>[0] = {
       coverage: {
         required_evidence: ['primary', 'supporting', 'structural'],
         semantic_required: ['implementation'],
@@ -41,7 +41,7 @@ describe('mcp-response-evidence', () => {
           task_kind: 'explain',
           evidence_class: 'supporting',
           focus_files: ['src/auth/store.ts'],
-          focus_ranges: [],
+          focus_ranges: [{ source_file: 'src/auth/store.ts', start_line: 10, end_line: 20 }],
         },
       }, {
         kind: 'nodes',
@@ -57,7 +57,10 @@ describe('mcp-response-evidence', () => {
           focus_ranges: [],
         },
       }],
-    })
+    }
+    const { evidence, navigation } = buildMadarResponseEvidenceWithPlanning(input)
+    const recovery = assessMadarRecoveryEvidence(input)
+    expect(JSON.stringify(evidence)).toBe(JSON.stringify(buildMadarResponseEvidence(input)))
 
     expect(evidence.evidence_strength.level).toBe('moderate')
     expect(evidence.coverage_detail.missing_obligations).toEqual([
@@ -75,6 +78,25 @@ describe('mcp-response-evidence', () => {
     })
     expect(evidence.pack_confidence).toBe('medium')
     expect(evidence.agent_directive).toBe('explore_with_caution')
+    expect(navigation).toEqual({ state: 'verify_targets', candidate: evidence.answerability.verification_targets[0] })
+    expect(recovery).toMatchObject({
+      state: 'verify_targets', readinessRank: 2, strength: 'moderate', strengthRank: 2,
+      missingObligations: ['evidence:supporting', 'evidence:structural'],
+    })
+    const privateBefore = structuredClone({ navigation, recovery })
+    const publicTarget = evidence.answerability.verification_targets[0]!
+    publicTarget.handle_id = 'mutated-public-handle'
+    publicTarget.reason = 'mutated public reason'
+    publicTarget.focus_files[0] = 'src/unrelated.ts'
+    publicTarget.focus_ranges[0]!.start_line = 999
+    publicTarget.focus_ranges[0]!.source_file = 'src/unrelated.ts'
+    evidence.answerability.verification_targets.length = 0
+    evidence.answerability.state = 'ready'
+    evidence.answerability.missing_obligations.length = 0
+    evidence.coverage_detail.missing_obligations.length = 0
+    evidence.evidence_strength.level = 'weak'
+    evidence.evidence_strength.selected_relationships = 999
+    expect({ navigation, recovery }).toEqual(privateBefore)
   })
 
   it('returns ready_with_caveat for complete but weakly connected evidence', () => {

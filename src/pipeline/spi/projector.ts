@@ -49,8 +49,11 @@
 // the trigger, but only when it covers demo-repo byte-equivalence).
 
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import ts from 'typescript'
 import { basename, extname, resolve } from 'node:path'
 
+import { allocateTopLevelCaseIdentities, declarationIdentityKey, topLevelCaseIdentityPlan } from '../extract/top-level-case-identities.js'
 import type {
   ExtractionData,
   ExtractionEdge,
@@ -86,6 +89,8 @@ export type ProjectSpiToExtractionOptions = {
   fileStemByAbsolutePath?: ReadonlyMap<string, string>
   /** Internal opt-in for strict SPI; auto requires a coordinated legacy identity migration. */
   resolveCaseCollisions?: boolean
+  /** Bounded identities coordinated with default/legacy top-level extraction. */
+  resolveTopLevelCaseCollisions?: boolean
 }
 
 const PROJECTABLE_SYMBOL_KINDS: ReadonlySet<SpiSymbolKind> = new Set([
@@ -153,6 +158,28 @@ export function projectSpiToExtraction(
   const allocatedSymbolIds = opts.resolveCaseCollisions
     ? allocateCaseDistinctSymbolIds(spi, projectedFileStemById)
     : new Map<string, string>()
+  if (opts.resolveTopLevelCaseCollisions && !opts.resolveCaseCollisions) {
+    for (const file of spi.files) {
+      const stem = projectedFileStemById.get(file.id) ?? basename(file.path, extname(file.path))
+      const symbols = spi.symbols.filter(symbol => symbol.file_id === file.id && PROJECTABLE_SYMBOL_KINDS.has(symbol.kind))
+      const plan = allocateTopLevelCaseIdentities(symbols.flatMap(symbol => {
+        const projected = projectSymbol(symbol, stem)
+        return projected ? [{ name: symbol.name,
+          kind: symbol.framework_metadata?.external_call === true ? 'external' : symbol.kind,
+          baseId: projected.id }] : []
+      }), [_makeId(stem)])
+      if (!plan.ids.size) continue
+      const sourcePath = resolve(root, file.path)
+      const extension = extname(sourcePath)
+      const kind = extension === '.tsx' ? ts.ScriptKind.TSX : extension === '.jsx' ? ts.ScriptKind.JSX
+        : ['.js', '.mjs', '.cjs'].includes(extension) ? ts.ScriptKind.JS : ts.ScriptKind.TS
+      const sourcePlan = topLevelCaseIdentityPlan(ts.createSourceFile(sourcePath, readFileSync(sourcePath, 'utf8'), ts.ScriptTarget.Latest, true, kind), stem)
+      for (const symbol of symbols) {
+        const id = plan.ids.get(declarationIdentityKey(symbol.kind, symbol.name))
+        if (id && sourcePlan.ids.get(declarationIdentityKey(symbol.kind, symbol.name)) === id) allocatedSymbolIds.set(symbol.id, id)
+      }
+    }
+  }
   const classNodeIdsByName = opts.resolveCaseCollisions ? new Map<string, string>() : undefined
   const classSymbolsByName = new Map<string, SpiSymbol[]>()
   const projectedIdCounts = new Map<string, number>()

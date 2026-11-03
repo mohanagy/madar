@@ -86,15 +86,15 @@ const TASK_EVIDENCE_RECIPES: Record<TaskIntentKind, TaskEvidenceRecipe> = {
   },
   'debug-flow': {
     id: 'debug-flow',
-    task_kind: 'impact',
-    required_evidence: ['primary', 'impact', 'supporting'],
-    preferred_evidence: ['primary', 'impact', 'supporting', 'structural', 'change'],
-    semantic_required: ['implementation', 'impact', 'configuration'],
-    semantic_optional: ['tests', 'contracts'],
+    task_kind: 'explain',
+    required_evidence: ['primary', 'supporting', 'structural'],
+    preferred_evidence: ['primary', 'supporting', 'structural', 'impact'],
+    semantic_required: ['implementation', 'structure'],
+    semantic_optional: ['configuration', 'contracts', 'tests', 'impact'],
     step_evidence: [
-      ['primary', 'impact'],
-      ['impact', 'supporting', 'structural'],
-      ['primary', 'impact', 'supporting'],
+      ['primary'],
+      ['supporting', 'structural'],
+      ['primary', 'supporting', 'structural'],
     ],
   },
   'pr-review-risk': {

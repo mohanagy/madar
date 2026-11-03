@@ -9,7 +9,7 @@ import { extractJs } from '../../src/pipeline/extract.js'
 import { generateGraph } from '../../src/infrastructure/generate.js'
 import { retrieveContext } from '../../src/runtime/retrieve.js'
 import { loadGraph } from '../../src/runtime/serve.js'
-import { reconcileSourceCalls, selectSourceDependencies, sourceSelectionProvenanceKey } from '../../src/runtime/retrieve/source-dependencies.js'
+import { reconcileSourceCalls, selectSourceDependencies, sourceLocalPriorityKey, sourceSelectionProvenanceKey } from '../../src/runtime/retrieve/source-dependencies.js'
 
 const roots: string[] = []
 afterEach(() => roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })))
@@ -401,6 +401,58 @@ describe('source grounded dependency selection', () => {
     expect(callers.node_ids).toHaveLength(12)
     expect(callers.node_ids).not.toContain(callee)
     expect(callers.node_ids).toContain(firstCaller)
+  })
+
+  it('reserves a bounded local calculation group without promoting shadowed, nested or stale bindings', () => {
+    const source = [
+      'export const FREE_ATTEMPTS = 3;',
+      'function normalizeAttemptCount(value: unknown) {',
+      '  return typeof value === "number" && value >= 0 ? Math.floor(value) : 0;',
+      '}',
+      'export function calculateShipmentAllowance(attemptsUsed: unknown) {',
+      '  const used = normalizeAttemptCount(attemptsUsed);',
+      '  return { free: used < FREE_ATTEMPTS, remainingAllowance: Math.max(0, FREE_ATTEMPTS - used - 1) };',
+      '}',
+      'export function supplied(value: unknown, FREE_ATTEMPTS: number) { return normalizeAttemptCount(value) < FREE_ATTEMPTS; }',
+      'export function deferred(value: unknown) { return () => normalizeAttemptCount(value) < FREE_ATTEMPTS; }',
+      'export const WRITTEN = 4;',
+      'function overwrite() { WRITTEN = 0; }',
+      'export function changed(value: unknown) { return normalizeAttemptCount(value) < WRITTEN; }',
+      ...Array.from({ length: 18 }, (_, index) => `export function view${index}() { return calculateShipmentAllowance(${index}); }`),
+    ].join('\n')
+    const { graph, root, idFor } = fixture({ 'allowance.ts': source }, true)
+    const id = (name: string) => idFor(name, 'allowance.ts')
+    const leader = id('calculateShipmentAllowance'), helper = id('normalizeAttemptCount'), scalar = id('FREE_ATTEMPTS')
+    const cache = new Map<string, string[] | null>()
+    const allowedOwner = () => true
+    const preference = { seedId: leader, allowedOwner }
+    const before = JSON.stringify(graph.edgeEntries())
+    const ordinary = selectSourceDependencies(graph, [leader], root, cache)
+    const preferred = selectSourceDependencies(graph, [leader], root, cache, { localPriority: preference })
+    expect(ordinary.node_ids).toHaveLength(12)
+    expect(ordinary.node_ids).not.toContain(scalar)
+    expect(preferred.node_ids).toHaveLength(12)
+    expect(preferred[sourceLocalPriorityKey]).toEqual([leader, helper, scalar])
+    expect(preferred[sourceSelectionProvenanceKey]!.admissions.slice(0, 2)).toEqual([
+      { node_id: helper, role: 'outgoing', depth: 0 }, { node_id: scalar, role: 'data_reference', depth: 0 },
+    ])
+    expect(preferred.relationships).toEqual(expect.arrayContaining([
+      { from_id: leader, to_id: helper, relation: 'calls' }, { from_id: leader, to_id: scalar, relation: 'depends_on' },
+    ]))
+    expect(JSON.stringify(graph.edgeEntries())).toBe(before)
+    const result = retrieveContext(graph, { question: 'How is attemptsUsed normalized when missing or negative, and when does a shipment qualify for another free attempt? Explain the remaining allowance.', taskKind: 'explain', budget: 3000 })
+    expect(result.matched_nodes.slice(0, 3).map(node => node.node_id)).toEqual([leader, helper, scalar])
+    expect(result.matched_nodes.find(node => node.node_id === scalar)?.snippet).toContain('FREE_ATTEMPTS = 3')
+    expect(result.token_count).toBeLessThanOrEqual(3000)
+    for (const name of ['supplied', 'deferred', 'changed']) {
+      const seedId = id(name)
+      expect(selectSourceDependencies(graph, [seedId], root, cache, { localPriority: { seedId, allowedOwner } })[sourceLocalPriorityKey]).toBeUndefined()
+    }
+    expect(selectSourceDependencies(graph, [leader], root, cache, { callerPriority: true, localPriority: preference })[sourceLocalPriorityKey]).toBeUndefined()
+    expect(selectSourceDependencies(graph, [leader], root, cache, { localPriority: { seedId: leader,
+      allowedOwner: (_file, label) => label !== 'FREE_ATTEMPTS' } })[sourceLocalPriorityKey]).toBeUndefined()
+    writeFileSync(join(root, 'allowance.ts'), source.replace('FREE_ATTEMPTS = 3', 'FREE_ATTEMPTS = 8'))
+    expect(selectSourceDependencies(graph, [leader], root, cache, { localPriority: preference })[sourceLocalPriorityKey]).toBeUndefined()
   })
 
   it.each([false, true])('retains a separate requested behavior after a named owner with a call: %s', withCall => {

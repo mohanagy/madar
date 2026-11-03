@@ -56,14 +56,16 @@ describe('default implementation source reads', () => {
     const interrupted = await call()
     spy.mockRestore()
     expect(changed).toBe(true)
-    for (const payload of [interrupted, await call()]) {
+    const excludedBeforeRequest = await call()
+    for (const [phase, payload] of [['during enrichment', interrupted], ['before request', excludedBeforeRequest]] as const) {
       const nodes = payload.pack?.matched_nodes ?? []
       expect(nodes.map((node: Record<string, unknown>) => resolveSourceSnippet(node, nodes)).join('\n'))
         .not.toContain('return items.map(normalizeItem)')
       expect(nodes.some((node: Record<string, unknown>) => String(node.source_file).endsWith('src/batch.ts'))).toBe(false)
-      expect(payload.expandable ?? []).toEqual([])
+      expect(payload.expandable ?? [], phase).toEqual([])
+      expect(payload.evidence.answerability.verification_targets ?? [], phase).toEqual([])
+      expect(payload.omitted_evidence, phase).toMatch(/current policy/)
     }
-    expect(interrupted.omitted_evidence).toMatch(/current policy/)
     // The policy excludes one file, not the whole workspace.
     const unaffected = await call({ prompt: 'Show the normalizeItem function in src/normalize.ts.' })
     const nodes = unaffected.pack?.matched_nodes ?? []

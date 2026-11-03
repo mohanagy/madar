@@ -1244,10 +1244,14 @@ describe('stdio runtime', () => {
       const expandedPayload = JSON.parse((expanded?.result as { content: Array<{ text: string }> }).content[0]!.text) as {
         matched_focus: number
         pack: {
-          matched_nodes: Array<{ label: string }>
+          matched_nodes: Array<{ label: string; snippet?: string | null; source_expand_handle?: string }>
         }
+        governance: { graph_freshness: { selected_context_status: string } }
       }
       expect(expandedPayload.pack.matched_nodes.length).toBeGreaterThan(0)
+      expect(expandedPayload.pack.matched_nodes.every(node => node.snippet == null && node.source_expand_handle === undefined)).toBe(true)
+      expect(expandedPayload.governance.graph_freshness.selected_context_status).toBe('unknown')
+      expect(expandedPayload).not.toHaveProperty('expansion_status')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1686,6 +1690,7 @@ describe('stdio runtime', () => {
         resourceVersions: new Map<string, string>(),
         resourceListSignature: null,
         contextPackHandles: new Map<string, unknown>(),
+        contextPackCache: new Map<string, string>(),
       }
 
       const first = await Promise.resolve(handleStdioRequest(graphPath, {
@@ -1742,6 +1747,52 @@ describe('stdio runtime', () => {
           matched_nodes: expect.any(Array),
         }),
       }))
+
+      // Cache hydration uses the separately stored plan, even if its public
+      // recommendation and advertised navigation have been withheld.
+      expect(sessionState.contextPackCache.size).toBe(1)
+      const [cacheKey, cacheText] = [...sessionState.contextPackCache.entries()][0]!
+      const originalRecord = JSON.parse(cacheText)
+      expect(originalRecord.navigation_plan).toMatchObject({
+        state: 'verify_targets', candidate: { focus_files: expect.any(Array) },
+      })
+      expect(originalRecord.navigation_plan.candidate.focus_files.length).toBeGreaterThan(0)
+      const changed = structuredClone(originalRecord)
+      changed.payload.evidence.answerability.state = 'insufficient'
+      changed.payload.evidence.answerability.verification_targets = []
+      changed.payload.expandable = []
+      changed.payload.pack.expandable = []
+      sessionState.contextPackCache.set(cacheKey, JSON.stringify(changed))
+      sessionState.contextPackHandles.clear()
+      const request = (id: number) => Promise.resolve(handleStdioRequest(graphPath, {
+        id, method: 'tools/call', params: { name: 'context_pack', arguments: {
+          prompt: 'How does AuthService reach Transport?', task: 'explain', budget: 3000,
+        } },
+      }, sessionState))
+      const privateHit = await request(4)
+      expect(privateHit).not.toHaveProperty('error')
+      const privatePayload = JSON.parse((privateHit?.result as { content: Array<{ text: string }> }).content[0]!.text)
+      expect(privatePayload.cache.status).toBe('hit')
+      expect(privatePayload.evidence.answerability.verification_targets ?? []).toEqual([])
+      expect(privatePayload.expandable).toHaveLength(1)
+      const recovered = sessionState.contextPackHandles.get(privatePayload.expandable[0].handle_id)
+      expect(recovered).toMatchObject({ follow_up: {
+        focus_files: originalRecord.navigation_plan.candidate.focus_files,
+      } })
+      expect(privatePayload).not.toHaveProperty('navigation_plan')
+
+      for (const [index, malformed] of [undefined, { state: 'verify_targets', candidate: {} }].entries()) {
+        const invalid = structuredClone(originalRecord)
+        if (malformed === undefined) delete invalid.navigation_plan
+        else invalid.navigation_plan = malformed
+        // Otherwise valid public targets must not reconstruct a missing private plan.
+        sessionState.contextPackCache.set(cacheKey, JSON.stringify(invalid))
+        const response = await request(5 + index)
+        expect(response).not.toHaveProperty('error')
+        const fresh = JSON.parse((response?.result as { content: Array<{ text: string }> }).content[0]!.text)
+        expect(fresh.cache.status).toBe('miss')
+        expect(fresh.pack.matched_nodes).toEqual(firstPayload.pack.matched_nodes)
+      }
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
