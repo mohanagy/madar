@@ -196,11 +196,24 @@ function firstExplicitSourcePage(owner: ExplicitSourceTargetOwner, context: Reco
   return undefined
 }
 
-/** Once all owners have recovery, use spare budget for complete small owners.
- * Do not let an oversized owner reduce a mixed request to navigation alone.
+function recountExplicitPayload(payload: RecordValue, budget: number): number | undefined {
+  const receipt = { max_tokens: budget, token_count: 0, enforced: true }
+  payload.serialized_budget = receipt
+  for (let pass = 0; pass < 12; pass++) {
+    const count = estimateQueryTokens(JSON.stringify(payload))
+    if (receipt.token_count === count) return count
+    receipt.token_count = count
+  }
+  return undefined
+}
+
+/** Retain all recovery, fill complete small owners, then start remaining owners.
+ * Only accepted page children are published; failed allocation trials stay private.
  */
-function fillNavigationOnlySource(payload: RecordValue, owners: readonly ExplicitSourceTargetOwner[],
-  generic: ReadonlyMap<string, ReturnType<typeof genericReference>>, budget: number, rootPath: string): RecordValue {
+function fillExplicitSourceBudget(payload: RecordValue, owners: readonly ExplicitSourceTargetOwner[],
+  generic: ReadonlyMap<string, ReturnType<typeof genericReference>>, options: ExplicitSourceTargetPayloadOptions,
+  staged: Map<string, ExplicitSourceTargetStoredHandle>): RecordValue {
+  const { budget, rootPath } = options
   const pack = record(payload.pack), evidence = record(payload.evidence), answerability = record(evidence.answerability)
   const receipt = record(payload.serialized_budget)
   // Unknown accounting or verification fields need their ordinary serializer.
@@ -217,25 +230,49 @@ function fillNavigationOnlySource(payload: RecordValue, owners: readonly Explici
     .sort((left, right) => left.tokens - right.tokens).map(entry => entry.owner)
   for (const owner of ordered) {
     const fallback = generic.get(owner.nodeId)
-    if (!fallback) continue
+    if (!fallback || records(record(retained.pack).matched_nodes).some(node => node.node_id === owner.nodeId)) continue
     const candidate = structuredClone(retained)
     record(candidate.pack).matched_nodes = [...records(record(candidate.pack).matched_nodes), sourceNode(owner)]
     candidate.expandable = records(candidate.expandable).filter(ref => ref.handle_id !== fallback.ref.handle_id)
     if (!records(candidate.expandable).length) delete candidate.expandable
-    const receipt = { max_tokens: budget, token_count: 0, enforced: true }
-    candidate.serialized_budget = receipt
-    let stable = false
-    for (let pass = 0; pass < 12; pass++) {
-      const count = estimateQueryTokens(JSON.stringify(candidate))
-      if (receipt.token_count === count) { stable = true; break }
-      receipt.token_count = count
-    }
-    if (stable && receipt.token_count <= budget) {
+    const count = recountExplicitPayload(candidate, budget)
+    if (count !== undefined && count <= budget) {
       owner.validate()
       const lines = readVerifiedSourceSnapshot(owner.sourceFile, rootPath).lines
       if (lines.slice(owner.range.start - 1, owner.range.end).join('\n') !== owner.snippet) continue
       owner.validate()
       retained = candidate
+    }
+  }
+  for (const owner of ordered) {
+    const fallback = generic.get(owner.nodeId)
+    if (!fallback || records(record(retained.pack).matched_nodes).some(node => node.node_id === owner.nodeId)
+      || !records(retained.expandable).some(ref => ref.handle_id === fallback.ref.handle_id)) continue
+    owner.validate()
+    const lines = readVerifiedSourceSnapshot(owner.sourceFile, rootPath).lines
+    if (sourceDeclarationKind(lines, owner.range, owner.label, owner.sourceFile) !== 'function') continue
+    const context: RecordValue = { task: options.task, task_intent: options.taskIntent ?? options.task,
+      evidence: structuredClone(retained.evidence), governance: structuredClone(retained.governance) }
+    let pageBudget = budget, wrapperReserve = 0
+    for (let attempt = 0; attempt < 3 && pageBudget >= MIN_SOURCE_EVIDENCE_BUDGET; attempt++) {
+      const page = beginSourceContinuation({ node_id: owner.nodeId, label: owner.label, source_file: owner.sourceFile,
+        range: { start_line: owner.range.start, end_line: owner.range.end }, snippet: owner.snippet }, context, pageBudget, rootPath)
+      const nodes = records(record(page.payload.pack).matched_nodes)
+      if (nodes.length !== 1) break
+      const candidate = structuredClone(retained)
+      record(candidate.pack).matched_nodes = [...records(record(candidate.pack).matched_nodes), nodes[0]!]
+      candidate.expandable = records(candidate.expandable).filter(ref => ref.handle_id !== fallback.ref.handle_id)
+      if (!records(candidate.expandable).length) delete candidate.expandable
+      const count = recountExplicitPayload(candidate, budget)
+      owner.validate()
+      if (count === undefined) break
+      if (count <= budget) {
+        retained = candidate
+        if (page.child) staged.set(page.child.id, page.child.handle)
+        break
+      }
+      wrapperReserve = Math.max(wrapperReserve, count - Number(record(page.payload.serialized_budget).token_count))
+      pageBudget = Math.min(pageBudget - 1, budget - wrapperReserve)
     }
   }
   return retained
@@ -322,8 +359,8 @@ export function buildExplicitSourceTargetPayload(options: ExplicitSourceTargetPa
       return true
     }
     let missing = owners.filter(owner => !recovered(owner))
-    if (!missing.length && !visible.length && owners.length > 1) {
-      payload = fillNavigationOnlySource(payload, owners, generic, options.budget, options.rootPath)
+    if (!missing.length && references.length && owners.length > 1) {
+      payload = fillExplicitSourceBudget(payload, owners, generic, options, staged)
       visible = records(record(payload.pack).matched_nodes)
       references = records(payload.expandable)
       advertised.clear()

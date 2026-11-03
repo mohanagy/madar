@@ -334,7 +334,8 @@ describe('strict context_pack explicit file and symbol targets', () => {
     await refuse(request([good, util]), /missing|unreadable|source|file|owner|fresh|stale|changed/i)
   })
 
-  it('delivers fitting small owners beside an oversized owner and retains its scoped recovery', async () => {
+  it('delivers complete small owners plus a first page and publishes only its nonrepeating cursor', async () => {
+    vi.stubEnv('MADAR_EXPERIMENTAL_EXACT_SOURCE_ONLY', '1')
     const large = ['export function large(input: number) {',
       ...Array.from({ length: 1000 }, (_, index) => `  input = (input + ${index}) % 65521;`),
       '  return input;', '}'].join('\n')
@@ -344,18 +345,39 @@ describe('strict context_pack explicit file and symbol targets', () => {
     const largeTarget = { file: 'large.ts', symbol: 'large' }
     const smallTargets = [{ file: 'small.ts', symbol: 'small' }, { file: 'other.ts', symbol: 'other' }]
     for (const targets of [[largeTarget, ...smallTargets], [...smallTargets, largeTarget]]) {
+      const beforeHandles = new Set(f.state.contextPackHandles!.keys())
       const payload = await f.call('context_pack', request(targets, 1000))
       assertPartial(payload)
       expect(payload.pack.matched_nodes.find(node => node.label === 'small()')?.snippet).toBe(small)
       expect(payload.pack.matched_nodes.find(node => node.label === 'other()')?.snippet).toBe(other)
-      const recovery = payload.expandable?.find(ref => ref.symbols[0] === 'large')
-      expect(recovery).toBeDefined()
-      expect(payload.expandable).toHaveLength(1)
-      const page = await f.call('context_expand', { handle_id: recovery!.handle_id, budget: 1000 })
+      const first = payload.pack.matched_nodes.find(node => node.label === 'large()')!
+      expect(first?.source_expand_handle, JSON.stringify(payload)).toBeTruthy()
+      expect(payload.expandable ?? []).toEqual([])
+      const published = payload.pack.matched_nodes.flatMap(node => node.source_expand_handle ? [node.source_expand_handle] : [])
+      expect([...f.state.contextPackHandles!.keys()].filter(id => !beforeHandles.has(id)).every(id => published.includes(id))).toBe(true)
+      const visible = (node: SourceNode): number[] => Array.from({ length: node.snippet_line_range.end_line - node.snippet_line_range.start_line + 1 },
+        (_, index) => index + node.snippet_line_range.start_line).filter(line => !(node.snippet_omitted_ranges ?? []).some(gap => line >= gap.start_line && line <= gap.end_line))
+      const firstLines = new Set(visible(first))
+      expect(firstLines.size).toBeGreaterThan(0)
+      const page = await f.call('context_expand', { handle_id: first.source_expand_handle!, budget: 1000 })
       assertPartial(page)
       expect(page.pack.matched_nodes[0]?.label).toBe('large()')
       expect(page.pack.matched_nodes[0]?.source_expand_handle).toBeTruthy()
+      expect(visible(page.pack.matched_nodes[0]!).some(line => firstLines.has(line))).toBe(false)
     }
+  })
+
+  it('retains small source and generic recovery when the first whole line cannot fit', async () => {
+    const large = `export function large() { const payload = "${'a'.repeat(12000)}";\n  return payload;\n}`
+    const small = 'export function small() {\n  return 1;\n}'
+    const other = 'export function other() {\n  return 2;\n}'
+    const f = fixture({ 'large.ts': large, 'small.ts': small, 'other.ts': other })
+    const payload = await f.call('context_pack', request([
+      { file: 'large.ts', symbol: 'large' }, { file: 'small.ts', symbol: 'small' }, { file: 'other.ts', symbol: 'other' },
+    ], 1000))
+    expect(payload.pack.matched_nodes.map(node => node.label).sort()).toEqual(['other()', 'small()'])
+    expect(payload.expandable?.[0]?.symbols).toEqual(['large'])
+    expect([...f.state.contextPackHandles!.keys()]).toEqual([payload.expandable![0]!.handle_id])
   })
 
   it('does not repair an invalid navigation-only serializer receipt when filling source', () => {
